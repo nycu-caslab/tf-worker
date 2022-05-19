@@ -30,6 +30,7 @@ int main() {
       if (reply->type != REDIS_REPLY_NIL)
         break;
     }
+    std::cout << "Input: " << reply->str << "\n";
     result = reply->str;
 
     int in_channels = 1, out_channels = atoi(reply->str), filter_size = 2;
