@@ -24,6 +24,7 @@ int main() {
   }
   while (true) {
     string result;
+    std::cout << "Start pooling redis\n";
     redisReply *reply;
     while (true) {
       reply = (redisReply *)redisCommand(c, "LPOP foo");
