@@ -1,0 +1,43 @@
+main.cpp(30) : Process start
+main.cpp(37) : Creating redis instance
+main.cpp(47) : Start pooling redis
+main.cpp(52) : Waiting
+main.cpp(56) : Result: 4
+main.cpp(67) : Run session
+main.cpp(69) : Create conv layer
+main.cpp(71) : Forward
+main.cpp(74) : [2,2,1,4]
+main.cpp(75) :  0.0615942   0.130704  -0.262217   0.312922
+
+ -0.411589 -0.0791197  -0.178029   0.487647
+
+ 0.0382656   0.514902  -0.479537   0.524849
+
+   0.11418   0.462027   0.209181  0.0940194
+main.cpp(52) : Waiting
+main.cpp(56) : Result: 4
+main.cpp(67) : Run session
+main.cpp(69) : Create conv layer
+main.cpp(71) : Forward
+main.cpp(74) : [2,2,1,4]
+main.cpp(75) : -0.0832054  -0.162632   -0.52428   0.239967
+
+ -0.226463  0.0543426  -0.390417  0.0503386
+
+  0.495141 -0.0143377   0.380352   0.223751
+
+  0.317118  -0.157786   0.421692 -0.0799477
+main.cpp(52) : Waiting
+main.cpp(56) : Result: 4
+main.cpp(67) : Run session
+main.cpp(69) : Create conv layer
+main.cpp(71) : Forward
+main.cpp(74) : [2,2,1,4]
+main.cpp(75) :   0.331203   0.199771   0.349939   0.151336
+
+   0.33634 -0.0978195   0.371882 0.00966476
+
+ -0.428465 0.00536609  -0.532845   -0.26693
+
+  0.267481  -0.463985   0.112701  -0.171178
+main.cpp(52) : Waiting

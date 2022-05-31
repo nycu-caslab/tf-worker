@@ -1,0 +1,4 @@
+main.cpp(30) : Process start
+main.cpp(37) : Creating redis instance
+main.cpp(47) : Start pooling redis
+main.cpp(52) : Waiting

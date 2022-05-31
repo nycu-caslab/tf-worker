@@ -48,11 +48,7 @@ public:
                XavierInit(root, in_channels, out_channels, filter_size));
     std::vector<Tensor> outputs;
     TF_CHECK_OK(session.Run({}, {assignedW}, &outputs));
-    std::cout << outputs[0].shape() << "\n";
-    std::cout << outputs[0].tensor<float, 4>() << "\n";
     TF_CHECK_OK(session.Run({conv}, &outputs));
-    std::cout << outputs[0].shape() << "\n";
-    std::cout << outputs[0].tensor<float, 4>() << "\n";
     return outputs;
   }
 
