@@ -1,4 +1,6 @@
-main.cpp(30) : Process start
-main.cpp(37) : Creating redis instance
-main.cpp(47) : Start pooling redis
-main.cpp(52) : Waiting
+main.cpp(20) : Process start
+main.cpp(27) : Creating redis instance
+main.cpp(37) : Start pooling redis
+main.cpp(45) : Input: 3 64 3 1
+./layer.hpp(49) : a
+./layer.hpp(53) : a

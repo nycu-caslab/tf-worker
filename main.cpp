@@ -1,25 +1,15 @@
+#include <fstream>
 #include <hiredis/hiredis.h>
+#include <iostream>
 #include <stdio.h>
 #include <tensorflow/cc/client/client_session.h>
 #include <tensorflow/cc/ops/standard_ops.h>
 #include <tensorflow/core/framework/tensor.h>
 
-#include <fstream>
-#include <iostream>
-
 #include "layer.hpp"
+#include "utils.hpp"
 using namespace tensorflow;
 using namespace tensorflow::ops;
-
-#define LOGs(...) log2file(__LINE__, __FILE__, __VA_ARGS__)
-
-template <typename... Args>
-void log2file(int line, const char *fileName, Args &&...args) {
-  std::ofstream stream;
-  stream.open("tf-worker/log.txt", std::ofstream::out | std::ofstream::app);
-  stream << fileName << "(" << line << ") : ";
-  (stream << ... << std::forward<Args>(args)) << '\n';
-}
 
 int main() {
 
@@ -49,30 +39,30 @@ int main() {
   while (true) {
     string result;
     redisReply *reply;
-    LOGs("Waiting");
     reply = (redisReply *)redisCommand(c, "BLPOP foo 0");
 
     result = reply->element[1]->str;
-    LOGs("Result: ", result);
+    LOGs("Input: ", result);
 
-    int in_channels = 1, out_channels = std::stoi(result), filter_size = 2;
+    std::istringstream iss(result);
+
+    int in_channels, out_channels, filter_size, stride;
+    iss >> in_channels >> out_channels >> filter_size >> stride;
+
     freeReplyObject(reply);
-    TensorShape sp({filter_size, filter_size, in_channels, out_channels});
+    TensorShape sp({1, 3, 224, 224});
     auto input = Variable(root.WithOpName("I"), sp, DT_FLOAT);
     std::vector<Tensor> outputs;
-    auto assignedI =
-        Assign(root.WithOpName("I_assign"), input,
-               XavierInit(root, in_channels, out_channels, filter_size));
+    auto assignedI = Assign(root.WithOpName("I_assign"), input,
+                            RandomInit(root, 1, 3, 224, 224));
 
-    LOGs("Run session");
     TF_CHECK_OK(session.Run({}, {assignedI}, &outputs));
-    LOGs("Create conv layer");
-    Conv conv(root, filter_size, in_channels, out_channels);
-    LOGs("Forward");
+    LOGs(outputs[0].shape());
+    Conv conv(root, filter_size, in_channels, out_channels, stride);
     conv.forward(session, input);
 
     LOGs(outputs[0].shape());
-    LOGs(outputs[0].tensor<float, 4>());
+    // LOGs(outputs[0].tensor<float, 4>());
   }
   return 0;
 }
