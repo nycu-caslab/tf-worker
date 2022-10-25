@@ -49,12 +49,17 @@ Input XavierInit(Scope scope, int in_chan, int out_chan, int filter_size) {
 }
 
 class Op {
+public:
+  Op(Scope &root) : root(root) {}
   virtual int forward(ClientSession &sesion, Variable input);
+
+private:
+  Scope &root;
 };
 
-class FC {
+class FC : public Op {
 public:
-  FC(Scope &root) : root(root) {}
+  FC(Scope &root) : root(root), Op(root) {}
   int forward(ClientSession &session, Variable input) {
     auto flat = Reshape(root, input, -1);
     return 0;
@@ -64,9 +69,9 @@ private:
   Scope &root;
 };
 
-class Activation {
+class Activation : public Op {
 public:
-  Activation(Scope &root) : root(root) {}
+  Activation(Scope &root) : root(root), Op(root) {}
   int forward(ClientSession &session, Variable input) {
     auto res = Relu(root, input);
     return 0;
@@ -76,9 +81,9 @@ private:
   Scope &root;
 };
 
-class Pool {
+class Pool : public Op {
 public:
-  Pool(Scope &root) : root(root) {}
+  Pool(Scope &root) : root(root), Op(root) {}
 
   int forward(ClientSession &session, Variable input) {
     auto res = MaxPool(root, input, {1, 2, 2, 1}, {1, 2, 2, 1}, "SAME");
