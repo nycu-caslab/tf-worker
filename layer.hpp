@@ -1,6 +1,7 @@
 #include <iostream>
 #include <stdio.h>
 #include <tensorflow/cc/client/client_session.h>
+#include <tensorflow/cc/ops/nn_ops.h>
 #include <tensorflow/cc/ops/standard_ops.h>
 #include <tensorflow/core/framework/tensor.h>
 
@@ -47,6 +48,47 @@ Input XavierInit(Scope scope, int in_chan, int out_chan, int filter_size) {
   return Multiply(scope, Sub(scope, rand, 0.5f), std * 2.f);
 }
 
+class Op {
+  virtual int forward(ClientSession &sesion, Variable input);
+};
+
+class FC {
+public:
+  FC(Scope &root) : root(root) {}
+  int forward(ClientSession &session, Variable input) {
+    auto flat = Reshape(root, input, -1);
+    return 0;
+  }
+
+private:
+  Scope &root;
+};
+
+class Activation {
+public:
+  Activation(Scope &root) : root(root) {}
+  int forward(ClientSession &session, Variable input) {
+    auto res = Relu(root, input);
+    return 0;
+  }
+
+private:
+  Scope &root;
+};
+
+class Pool {
+public:
+  Pool(Scope &root) : root(root) {}
+
+  int forward(ClientSession &session, Variable input) {
+    auto res = MaxPool(root, input, {1, 2, 2, 1}, {1, 2, 2, 1}, "SAME");
+    return 0;
+  }
+
+private:
+  Scope &root;
+};
+
 class Conv {
 public:
   Conv(Scope &root, int filter_size = 2, int in_channels = 1,
@@ -58,15 +100,12 @@ public:
                         DT_FLOAT)),
         stride(stride) {}
   auto forward(ClientSession &session, Variable input) {
-    auto conv = Conv2D(root, input, filter,
-                       gtl::ArraySlice<int>({stride, stride, stride, stride}),
-                       StringPiece("SAME"));
-    LOGs("a");
+    auto conv =
+        Conv2D(root, input, filter, {stride, stride, stride, stride}, "SAME");
     auto assignedW = Assign(
         root.WithOpName("W_assign"), filter,
         RandomInit(root, filter_size, filter_size, in_channels, out_channels));
     std::vector<Tensor> outputs;
-    LOGs("a");
     TF_CHECK_OK(session.Run({}, {assignedW}, &outputs));
     LOGs("a");
     TF_CHECK_OK(session.Run({conv}, &outputs));
@@ -75,7 +114,7 @@ public:
   }
 
 private:
-  Scope root;
+  Scope &root;
   Variable filter;
   int in_channels;
   int out_channels;

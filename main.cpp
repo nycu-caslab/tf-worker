@@ -7,6 +7,7 @@
 #include <tensorflow/core/framework/tensor.h>
 
 #include "layer.hpp"
+#include "tensorflow/core/platform/status.h"
 #include "utils.hpp"
 using namespace tensorflow;
 using namespace tensorflow::ops;
@@ -58,11 +59,17 @@ int main() {
 
     TF_CHECK_OK(session.Run({}, {assignedI}, &outputs));
     LOGs(outputs[0].shape());
-    Conv conv(root, filter_size, in_channels, out_channels, stride);
-    conv.forward(session, input);
+    Pool pool(root);
+    pool.forward(session, input);
+    Activation act(root);
+    act.forward(session, input);
+    FC fc(root);
+    fc.forward(session, input);
+    // Conv conv(root, filter_size, in_channels, out_channels, stride);
+    // conv.forward(session, input);
 
     LOGs(outputs[0].shape());
-    // LOGs(outputs[0].tensor<float, 4>());
+    LOGs(outputs[0].tensor<float, 4>());
   }
   return 0;
 }

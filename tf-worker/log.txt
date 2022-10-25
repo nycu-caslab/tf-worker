@@ -1,7 +1,4 @@
-main.cpp(20) : Process start
-main.cpp(27) : Creating redis instance
-main.cpp(37) : Start pooling redis
-main.cpp(45) : Input: 3 64 3 1
-main.cpp(60) : [1,3,224,224]
-./layer.hpp(64) : a
-./layer.hpp(69) : a
+Process start
+Creating redis instance
+Error: Connection refused
+Start pooling redis

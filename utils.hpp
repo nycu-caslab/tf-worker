@@ -4,14 +4,13 @@
 #include <fstream>
 #include <iostream>
 
-#define LOGs(...) log2file(__LINE__, __FILE__, __VA_ARGS__)
-
-template <typename... Args>
-void log2file(int line, const char *fileName, Args &&...args) {
+template <typename Arg, typename... Args> void LOGs(Arg &&arg, Args &&...args) {
   std::ofstream stream;
   stream.open("tf-worker/log.txt", std::ofstream::out | std::ofstream::app);
-  stream << fileName << "(" << line << ") : ";
-  (stream << ... << std::forward<Args>(args)) << '\n';
+  stream << std::forward<Arg>(arg);
+  using expander = int[];
+  (void)expander{0, (void(stream << ' ' << std::forward<Args>(args)), 0)...};
+  stream << '\n';
 }
 
 #endif
