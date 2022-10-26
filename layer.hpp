@@ -51,13 +51,13 @@ Input XavierInit(Scope scope, int in_chan, int out_chan, int filter_size) {
 class Op {
 public:
   Op(Scope &root) : root(root) {}
-  virtual int forward(ClientSession &sesion, Variable input);
+  virtual int forward(ClientSession &sesion, Variable input) { return 0; };
 
 private:
   Scope &root;
 };
 
-class FC : public Op {
+class FC : Op {
 public:
   FC(Scope &root) : root(root), Op(root) {}
   int forward(ClientSession &session, Variable input) {
@@ -69,7 +69,7 @@ private:
   Scope &root;
 };
 
-class Activation : public Op {
+class Activation : Op {
 public:
   Activation(Scope &root) : root(root), Op(root) {}
   int forward(ClientSession &session, Variable input) {
@@ -81,7 +81,7 @@ private:
   Scope &root;
 };
 
-class Pool : public Op {
+class Pool : Op {
 public:
   Pool(Scope &root) : root(root), Op(root) {}
 
