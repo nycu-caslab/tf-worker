@@ -2,3 +2,13 @@ Process start
 Creating redis instance
 Error: Connection refused
 Start pooling redis
+[1,3,224,224]
+wow
+[1,3,224,224]
+wow
+wow
+wow
+wow
+wow
+wow
+wow

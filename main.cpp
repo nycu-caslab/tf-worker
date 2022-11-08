@@ -14,62 +14,73 @@ using namespace tensorflow::ops;
 
 int main() {
 
-  std::ofstream stream;
-  stream.open("tf-worker/log.txt");
-  stream.close();
-
-  LOGs("Process start");
-
   Scope root = Scope::NewRootScope();
   ClientSession session(root);
+  int in_channels = 3, out_channels = 64, filter_size = 3, stride = 1;
 
-  redisContext *c = redisConnect(getenv("REDIS"), 6379);
+  std::vector<Tensor> outputs;
 
-  LOGs("Creating redis instance");
+  TensorShape sp({1, 224, 224, 3});
+  auto input = Variable(root, sp, DT_FLOAT);
+  auto assignedI =
+      Assign(root, input, RandomNormal(root, {1, 224, 224, 3}, DT_FLOAT));
+  TF_CHECK_OK(session.Run({}, {assignedI}, &outputs));
+  std::cout << "assign\n";
 
-  if (c == NULL || c->err) {
-    if (c) {
-      LOGs("Error:", c->errstr);
-    } else {
-      LOGs("Can't allocate redis context");
-    }
+  std::vector<Op *> Vgg16 = {
+      // Block 1
+      new Conv(root, 3, 3, 64, 1),
+      new Activation(root),
+      new Conv(root, 3, 64, 64, 1),
+      new Activation(root),
+      new Pool(root, 2, 2),
+
+      // Block 2
+      new Conv(root, 3, 64, 128, 1),
+      new Activation(root),
+      new Conv(root, 3, 128, 128, 1),
+      new Activation(root),
+      new Pool(root, 2, 2),
+
+      // Block 3
+      new Conv(root, 3, 128, 256, 1),
+      new Activation(root),
+      new Conv(root, 3, 256, 256, 1),
+      new Activation(root),
+      new Conv(root, 3, 256, 256, 1),
+      new Activation(root),
+      new Pool(root, 2, 2),
+
+      // Block 4
+      new Conv(root, 3, 256, 512, 1),
+      new Activation(root),
+      new Conv(root, 3, 512, 512, 1),
+      new Activation(root),
+      new Conv(root, 3, 512, 512, 1),
+      new Activation(root),
+      new Pool(root, 2, 2),
+
+      // Block 5
+      new Conv(root, 3, 512, 512, 1),
+      new Activation(root),
+      new Conv(root, 3, 512, 512, 1),
+      new Activation(root),
+      new Conv(root, 3, 512, 512, 1),
+      new Activation(root),
+      new Pool(root, 2, 2),
+
+      new Flat(root),
+      new FC(root, 512 * 7 * 7, 4096),
+      new Activation(root),
+      new FC(root, 4096, 4096),
+      new Activation(root),
+      new FC(root, 4096, 10),
+  };
+
+  for (auto &layer : Vgg16) {
+    input = layer->forward(session, input);
+    std::cout << "forward\n";
   }
 
-  LOGs("Start pooling redis");
-
-  while (true) {
-    string result;
-    redisReply *reply;
-    reply = (redisReply *)redisCommand(c, "BLPOP foo 0");
-
-    result = reply->element[1]->str;
-    LOGs("Input: ", result);
-
-    std::istringstream iss(result);
-
-    int in_channels, out_channels, filter_size, stride;
-    iss >> in_channels >> out_channels >> filter_size >> stride;
-
-    freeReplyObject(reply);
-    TensorShape sp({1, 3, 224, 224});
-    auto input = Variable(root.WithOpName("I"), sp, DT_FLOAT);
-    std::vector<Tensor> outputs;
-    auto assignedI = Assign(root.WithOpName("I_assign"), input,
-                            RandomInit(root, 1, 3, 224, 224));
-
-    TF_CHECK_OK(session.Run({}, {assignedI}, &outputs));
-    LOGs(outputs[0].shape());
-    Pool pool(root);
-    pool.forward(session, input);
-    Activation act(root);
-    act.forward(session, input);
-    FC fc(root);
-    fc.forward(session, input);
-    // Conv conv(root, filter_size, in_channels, out_channels, stride);
-    // conv.forward(session, input);
-
-    LOGs(outputs[0].shape());
-    LOGs(outputs[0].tensor<float, 4>());
-  }
   return 0;
 }
