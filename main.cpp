@@ -13,18 +13,34 @@ using namespace tensorflow;
 using namespace tensorflow::ops;
 
 int main() {
+  std::ofstream stream;
+  stream.open("tf-worker/log.txt");
+  stream.close();
+
+  LOGs("Process start");
 
   Scope root = Scope::NewRootScope();
   ClientSession session(root);
-  int in_channels = 3, out_channels = 64, filter_size = 3, stride = 1;
+
+  redisContext *c = redisConnect(getenv("REDIS"), 6379);
+
+  LOGs("Creating redis instance");
+
+  if (c == NULL || c->err) {
+    if (c) {
+      LOGs("Error:", c->errstr);
+    } else {
+      LOGs("Can't allocate redis context");
+    }
+  }
 
   std::vector<Tensor> outputs;
-
   TensorShape sp({1, 224, 224, 3});
   auto input = Variable(root, sp, DT_FLOAT);
-  Output assignedI =
+  std::vector<Output> variables(10);
+  variables[0] =
       Assign(root, input, RandomNormal(root, {1, 224, 224, 3}, DT_FLOAT));
-  TF_CHECK_OK(session.Run({}, {assignedI}, &outputs));
+  TF_CHECK_OK(session.Run({}, {variables[0]}, &outputs));
 
   std::vector<Op *> Vgg16 = {
       // Block 1
@@ -75,17 +91,27 @@ int main() {
       new Activation(root),
       new FC(root, session, 4096, 10),
   };
+  std::cout << Vgg16.size() << std::endl;
 
-  auto begin = std::chrono::high_resolution_clock::now();
+  LOGs("Start pooling redis");
 
-  for (auto &layer : Vgg16) {
-    assignedI = layer->forward(session, assignedI);
+  while (true) {
+    std::string result;
+    redisReply *reply;
+    reply = (redisReply *)redisCommand(c, "BLPOP foo 0");
+
+    result = reply->element[1]->str;
+    LOGs("Input: ", result);
+
+    std::istringstream iss(result);
+    freeReplyObject(reply);
+
+    int variable_id, layer_id;
+    iss >> variable_id >> layer_id;
+
+    variables[variable_id] =
+        Vgg16[layer_id]->forward(session, variables[variable_id]);
+    LOGs("Forwarded: Vgg16-", layer_id);
   }
-
-  auto end = std::chrono::high_resolution_clock::now();
-  std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin)
-                   .count()
-            << "ns" << std::endl;
-
   return 0;
 }
