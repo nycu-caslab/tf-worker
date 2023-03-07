@@ -1,3 +1,4 @@
+#include <chrono>
 #include <fstream>
 #include <hiredis/hiredis.h>
 #include <iostream>
@@ -12,6 +13,72 @@
 
 using namespace tensorflow;
 using namespace tensorflow::ops;
+std::vector<Op *> Vgg16;
+
+void worker(int worker_id, ClientSession &session,
+            std::vector<Output> &variables, QueueEnqueue &enqueue,
+            QueueDequeue &dequeue, QueueSize &size, string redis) {
+  LOGs("Start pooling redis", redis);
+
+  redisContext *c = redisConnect(redis.c_str(), 6379);
+
+  LOGs("Creating redis instance");
+
+  if (c == NULL || c->err) {
+    if (c) {
+      LOGs("Error:", c->errstr);
+    } else {
+      LOGs("Can't allocate redis context");
+    }
+  }
+
+  while (true) {
+    std::string result;
+    redisReply *reply;
+    reply = (redisReply *)redisCommand(c, "BLPOP foo 0");
+
+    result = reply->element[1]->str;
+    LOGs(worker_id, "Input: ", result);
+
+    std::istringstream iss(result);
+    freeReplyObject(reply);
+
+    string cmd;
+    iss >> cmd;
+    if (cmd == "forward") {
+      int model_id, layer_id;
+      iss >> model_id >> layer_id;
+      // auto start = std::chrono::system_clock::now();
+      variables[worker_id] =
+          Vgg16[layer_id]->forward(session, variables[worker_id]);
+      // auto end = std::chrono::system_clock::now();
+      // auto elapsed =
+      //     std::chrono::duration_cast<std::chrono::milliseconds>(end -
+      //     start);
+      LOGs("Forwarded: Vgg16-", layer_id);
+      // LOGs(elapsed.count());
+    } else if (cmd == "push") {
+      int variable_id;
+      iss >> variable_id;
+      std::vector<Tensor> outputs;
+      TF_CHECK_OK(
+          session.Run({}, {variables[variable_id]}, {enqueue}, &outputs));
+      TF_CHECK_OK(session.Run({}, {size}, {}, &outputs));
+      int size_value = *outputs[0].scalar<int>().data();
+      LOGs("Enqueued ", variable_id, "size: ", size_value);
+    } else if (cmd == "pop") {
+      int variable_id;
+      iss >> variable_id;
+      LOGs("POP", variable_id);
+      std::vector<Tensor> outputs;
+      TF_CHECK_OK(session.Run({}, {variables[variable_id]}, {dequeue.operation},
+                              &outputs));
+      TF_CHECK_OK(session.Run({}, {size}, {}, &outputs));
+      int value_3 = *outputs[0].scalar<int>().data();
+      LOGs("Dequeued ", variable_id, "size: ", value_3);
+    }
+  }
+}
 
 int main() {
   std::ofstream stream;
@@ -24,18 +91,6 @@ int main() {
   SessionOptions config;
   config.config.mutable_gpu_options()->set_allow_growth(true);
   ClientSession session(root, config);
-
-  redisContext *c = redisConnect(getenv("REDIS"), 6379);
-
-  LOGs("Creating redis instance");
-
-  if (c == NULL || c->err) {
-    if (c) {
-      LOGs("Error:", c->errstr);
-    } else {
-      LOGs("Can't allocate redis context");
-    }
-  }
 
   FIFOQueue::Attrs fifoqueue_attr;
   FIFOQueue queue(root, {DT_FLOAT}, fifoqueue_attr.SharedName("test"));
@@ -50,8 +105,11 @@ int main() {
   variables[0] =
       Assign(root, input, RandomNormal(root, {1, 224, 224, 3}, DT_FLOAT));
   TF_CHECK_OK(session.Run({}, {variables[0]}, &outputs));
+  variables[1] =
+      Assign(root, input, RandomNormal(root, {1, 224, 224, 3}, DT_FLOAT));
+  TF_CHECK_OK(session.Run({}, {variables[1]}, &outputs));
 
-  std::vector<Op *> Vgg16 = {
+  Vgg16 = {
       // Block 1
       new Conv(root, session, 3, 3, 64, 1),
       new Activation(root),
@@ -102,47 +160,14 @@ int main() {
   };
   std::cout << Vgg16.size() << std::endl;
 
-  LOGs("Start pooling redis");
+  std::thread t1(worker, 0, std::ref(session), std::ref(variables),
+                 std::ref(enqueue), std::ref(dequeue), std::ref(size),
+                 getenv("REDIS0"));
+  std::thread t2(worker, 1, std::ref(session), std::ref(variables),
+                 std::ref(enqueue), std::ref(dequeue), std::ref(size),
+                 getenv("REDIS1"));
 
-  while (true) {
-    std::string result;
-    redisReply *reply;
-    reply = (redisReply *)redisCommand(c, "BLPOP foo 0");
-
-    result = reply->element[1]->str;
-    LOGs("Input: ", result);
-
-    std::istringstream iss(result);
-    freeReplyObject(reply);
-
-    string cmd;
-    iss >> cmd;
-    if (cmd == "forward") {
-      int variable_id, layer_id;
-      iss >> variable_id >> layer_id;
-      variables[variable_id] =
-          Vgg16[layer_id]->forward(session, variables[variable_id]);
-      LOGs("Forwarded: Vgg16-", layer_id);
-    } else if (cmd == "push") {
-      int variable_id;
-      iss >> variable_id;
-      std::vector<Tensor> outputs;
-      TF_CHECK_OK(
-          session.Run({}, {variables[variable_id]}, {enqueue}, &outputs));
-      TF_CHECK_OK(session.Run({}, {size}, {}, &outputs));
-      int value_3 = *outputs[0].scalar<int>().data();
-      LOGs("Enqueued ", variable_id, "size: ", value_3);
-    } else if (cmd == "pop") {
-      int variable_id;
-      iss >> variable_id;
-      LOGs("POP", variable_id);
-      std::vector<Tensor> outputs;
-      TF_CHECK_OK(session.Run({}, {variables[variable_id]}, {dequeue.operation},
-                              &outputs));
-      TF_CHECK_OK(session.Run({}, {size}, {}, &outputs));
-      int value_3 = *outputs[0].scalar<int>().data();
-      LOGs("Dequeued ", variable_id, "size: ", value_3);
-    }
-  }
+  t1.join();
+  t2.join();
   return 0;
 }

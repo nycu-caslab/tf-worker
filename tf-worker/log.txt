@@ -1,163 +1,159 @@
 Process start
+Start pooling redis redis0
+Start pooling redis redis1
 Creating redis instance
 Creating redis instance
-Start pooling redis
-Start pooling redis
-Input:  forward 0 0
-Input:  forward 0 0
+0 Input:  forward 0 0
+1 Input:  forward 0 0
 Forwarded: Vgg16- 0
-Input:  forward 0 1
+1 Input:  forward 0 1
 Forwarded: Vgg16- 0
-Input:  forward 0 1
+0 Input:  forward 0 1
 Forwarded: Vgg16- 1
-Input:  forward 0 2
+0 Input:  forward 0 2
 Forwarded: Vgg16- 1
-Input:  forward 0 2
+1 Input:  forward 0 2
 Forwarded: Vgg16- 2
-Input:  forward 0 3
+0 Input:  forward 0 3
 Forwarded: Vgg16- 2
-Input:  forward 0 3
+1 Input:  forward 0 3
 Forwarded: Vgg16- 3
-Input:  forward 0 4
+0 Input:  forward 0 4
 Forwarded: Vgg16- 3
-Input:  forward 0 4
+1 Input:  forward 0 4
 Forwarded: Vgg16- 4
-Input:  forward 0 5
+0 Input:  forward 0 5
 Forwarded: Vgg16- 4
-Input:  forward 0 5
+1 Input:  forward 0 5
 Forwarded: Vgg16- 5
-Input:  forward 0 6
+0 Input:  forward 0 6
 Forwarded: Vgg16- 5
-Input:  forward 0 6
+1 Input:  forward 0 6
 Forwarded: Vgg16- 6
-Input:  forward 0 7
+0 Input:  forward 0 7
 Forwarded: Vgg16- 6
-Input:  forward 0 7
+1 Input:  forward 0 7
 Forwarded: Vgg16- 7
-Input:  forward 0 8
+0 Input:  forward 0 8
 Forwarded: Vgg16- 7
-Input:  forward 0 8
+1 Input:  forward 0 8
 Forwarded: Vgg16- 8
-Input:  forward 0 9
+0 Input:  forward 0 9
 Forwarded: Vgg16- 8
-Input:  forward 0 9
+1 Input:  forward 0 9
 Forwarded: Vgg16- 9
-Input:  forward 0 10
+0 Input:  forward 0 10
 Forwarded: Vgg16- 9
-Input:  forward 0 10
+1 Input:  forward 0 10
 Forwarded: Vgg16- 10
-Input:  forward 0 11
+0 Input:  forward 0 11
 Forwarded: Vgg16- 10
-Input:  forward 0 11
+1 Input:  forward 0 11
 Forwarded: Vgg16- 11
-Input:  forward 0 12
+0 Input:  forward 0 12
 Forwarded: Vgg16- 11
-Input:  forward 0 12
+1 Input:  forward 0 12
 Forwarded: Vgg16- 12
-Input:  forward 0 13
+0 Input:  forward 0 13
 Forwarded: Vgg16- 12
-Input:  forward 0 13
+1 Input:  forward 0 13
 Forwarded: Vgg16- 13
-Input:  forward 0 14
+0 Input:  forward 0 14
 Forwarded: Vgg16- 13
-Input:  forward 0 14
+1 Input:  forward 0 14
 Forwarded: Vgg16- 14
-Input:  forward 0 15
+0 Input:  forward 0 15
 Forwarded: Vgg16- 14
-Input:  forward 0 15
+1 Input:  forward 0 15
 Forwarded: Vgg16- 15
-Input:  forward 0 16
+0 Input:  forward 0 16
 Forwarded: Vgg16- 15
-Input:  forward 0 16
+1 Input:  forward 0 16
 Forwarded: Vgg16- 16
-Input:  forward 0 17
+0 Input:  forward 0 17
 Forwarded: Vgg16- 16
-Input:  forward 0 17
+1 Input:  forward 0 17
 Forwarded: Vgg16- 17
-Input:  forward 0 18
+0 Input:  forward 0 18
 Forwarded: Vgg16- 17
-Input:  forward 0 18
+1 Input:  forward 0 18
 Forwarded: Vgg16- 18
-Input:  forward 0 19
+0 Input:  forward 0 19
 Forwarded: Vgg16- 18
-Input:  forward 0 19
+1 Input:  forward 0 19
 Forwarded: Vgg16- 19
-Input:  forward 0 20
+0 Input:  forward 0 20
 Forwarded: Vgg16- 19
-Input:  forward 0 20
+1 Input:  forward 0 20
 Forwarded: Vgg16- 20
-Input:  forward 0 21
+0 Input:  forward 0 21
 Forwarded: Vgg16- 20
-Input:  forward 0 21
+1 Input:  forward 0 21
 Forwarded: Vgg16- 21
-Input:  forward 0 22
+0 Input:  forward 0 22
 Forwarded: Vgg16- 21
-Input:  forward 0 22
+1 Input:  forward 0 22
 Forwarded: Vgg16- 22
-Input:  forward 0 23
+0 Input:  forward 0 23
 Forwarded: Vgg16- 22
-Input:  forward 0 23
+1 Input:  forward 0 23
 Forwarded: Vgg16- 23
-Input:  forward 0 24
+0 Input:  forward 0 24
 Forwarded: Vgg16- 23
-Input:  forward 0 24
+1 Input:  forward 0 24
 Forwarded: Vgg16- 24
-Input:  forward 0 25
+0 Input:  forward 0 25
 Forwarded: Vgg16- 24
-Input:  forward 0 25
+1 Input:  forward 0 25
 Forwarded: Vgg16- 25
-Input:  forward 0 26
+0 Input:  forward 0 26
 Forwarded: Vgg16- 25
-Input:  forward 0 26
+1 Input:  forward 0 26
 Forwarded: Vgg16- 26
-Input:  forward 0 27
+0 Input:  forward 0 27
 Forwarded: Vgg16- 26
-Input:  forward 0 27
+1 Input:  forward 0 27
 Forwarded: Vgg16- 27
-Input:  forward 0 28
+0 Input:  forward 0 28
 Forwarded: Vgg16- 27
-Input:  forward 0 28
+1 Input:  forward 0 28
 Forwarded: Vgg16- 28
-Input:  forward 0 29
+0 Input:  forward 0 29
 Forwarded: Vgg16- 28
-Input:  forward 0 29
+1 Input:  forward 0 29
 Forwarded: Vgg16- 29
-Input:  forward 0 30
+0 Input:  forward 0 30
 Forwarded: Vgg16- 29
-Input:  forward 0 30
+1 Input:  forward 0 30
 Forwarded: Vgg16- 30
-Input:  forward 0 31
+0 Input:  forward 0 31
 Forwarded: Vgg16- 30
-Input:  forward 0 31
+1 Input:  forward 0 31
 Forwarded: Vgg16- 31
-Input:  forward 0 32
+0 Input:  forward 0 32
 Forwarded: Vgg16- 31
-Input:  forward 0 32
+1 Input:  forward 0 32
 Forwarded: Vgg16- 32
-Input:  forward 0 33
+0 Input:  forward 0 33
 Forwarded: Vgg16- 32
-Input:  forward 0 33
+1 Input:  forward 0 33
 Forwarded: Vgg16- 33
-Input:  forward 0 34
+0 Input:  forward 0 34
 Forwarded: Vgg16- 33
-Input:  forward 0 34
+1 Input:  forward 0 34
 Forwarded: Vgg16- 34
-Input:  forward 0 35
+0 Input:  forward 0 35
 Forwarded: Vgg16- 34
-Input:  forward 0 35
+1 Input:  forward 0 35
 Forwarded: Vgg16- 35
-Input:  forward 0 36
+0 Input:  forward 0 36
 Forwarded: Vgg16- 35
-Input:  forward 0 36
+1 Input:  forward 0 36
 Forwarded: Vgg16- 36
-Input:  push 0
+0 Input:  push 0
 Forwarded: Vgg16- 36
-Input:  push 0
-Enqueued  0 size:  1
-Input:  pop 0
-POP 0
-Enqueued  0 size:  1
-Input:  pop 0
-POP 0
-Dequeued  0 size:  0
-Dequeued  0 size:  0
+1 Input:  push 1
+Enqueued  0 size:  2
+0 Input:  push 0
+Enqueued  1 size:  3
+Enqueued  0 size:  3
