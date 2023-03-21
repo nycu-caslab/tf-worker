@@ -1,3 +1,6 @@
+#include "tensorflow/cc/framework/scope.h"
+#include "tensorflow/core/framework/queue_interface.h"
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <hiredis/hiredis.h>
@@ -14,9 +17,16 @@
 using namespace tensorflow;
 using namespace tensorflow::ops;
 std::vector<Op *> Vgg16;
+std::atomic_int status;
 
-void worker(int worker_id, ClientSession &session,
-            std::vector<Output> &variables, QueueEnqueue &enqueue,
+const int MEM_INIT = 0;
+const int MEM_SENT = 1;
+const int MEM_RECV = 2;
+std::atomic_long st, ed;
+
+void worker(int worker_id, Scope &root, ClientSession &session,
+            std::vector<Output> &variables,
+            std::vector<std::vector<int>> &send_recv, QueueEnqueue &enqueue,
             QueueDequeue &dequeue, QueueSize &size, string redis) {
   LOGs("Start pooling redis", redis);
 
@@ -38,7 +48,7 @@ void worker(int worker_id, ClientSession &session,
     reply = (redisReply *)redisCommand(c, "BLPOP foo 0");
 
     result = reply->element[1]->str;
-    LOGs(worker_id, "Input: ", result);
+    LOGs("Worker", worker_id, ", Input: ", result);
 
     std::istringstream iss(result);
     freeReplyObject(reply);
@@ -48,15 +58,26 @@ void worker(int worker_id, ClientSession &session,
     if (cmd == "forward") {
       int model_id, layer_id;
       iss >> model_id >> layer_id;
-      // auto start = std::chrono::system_clock::now();
+      auto start = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::system_clock::now().time_since_epoch())
+                       .count();
       variables[worker_id] =
           Vgg16[layer_id]->forward(session, variables[worker_id]);
-      // auto end = std::chrono::system_clock::now();
-      // auto elapsed =
-      //     std::chrono::duration_cast<std::chrono::milliseconds>(end -
-      //     start);
+      auto end = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::system_clock::now().time_since_epoch())
+                     .count();
       LOGs("Forwarded: Vgg16-", layer_id);
-      // LOGs(elapsed.count());
+      LOGs(worker_id, ":", start, end);
+
+      if (layer_id == 0)
+        st = start;
+      if (layer_id == 36) {
+        LOGs("------------------------");
+        ed = end;
+        LOGs("Total:", ed - st);
+        LOGs("------------------------");
+      }
+
     } else if (cmd == "push") {
       int variable_id;
       iss >> variable_id;
@@ -69,13 +90,37 @@ void worker(int worker_id, ClientSession &session,
     } else if (cmd == "pop") {
       int variable_id;
       iss >> variable_id;
-      LOGs("POP", variable_id);
       std::vector<Tensor> outputs;
-      TF_CHECK_OK(session.Run({}, {variables[variable_id]}, {dequeue.operation},
-                              &outputs));
+      TF_CHECK_OK(session.Run({}, {}, {dequeue.operation}, &outputs));
+      variables[variable_id] = dequeue.components[0];
+      TF_CHECK_OK(session.Run({variables[variable_id]}, &outputs));
+      std::cout << outputs[0].shape();
       TF_CHECK_OK(session.Run({}, {size}, {}, &outputs));
       int value_3 = *outputs[0].scalar<int>().data();
       LOGs("Dequeued ", variable_id, "size: ", value_3);
+    } else if (cmd == "send") {
+      int src, dst;
+      iss >> src >> dst;
+      variables[dst] = variables[src];
+      status = MEM_SENT;
+      LOGs("Sent ", src, "to", dst);
+    } else if (cmd == "recv") {
+      int src, dst;
+      iss >> src >> dst;
+      while (status != MEM_SENT) {
+      }
+      status = MEM_INIT;
+      LOGs("Recv ", src, "to", dst);
+    } else if (cmd == "create") {
+      int batch_size;
+      iss >> batch_size;
+
+      std::vector<Tensor> outputs;
+      TensorShape sp({16, 224, 224, 3});
+      auto input = Variable(root, sp, DT_FLOAT);
+      variables[worker_id] = Assign(
+          root, input, RandomNormal(root, {batch_size, 224, 224, 3}, DT_FLOAT));
+      TF_CHECK_OK(session.Run({}, {variables[0]}, &outputs));
     }
   }
 }
@@ -98,16 +143,7 @@ int main() {
   QueueDequeue dequeue(root.WithOpName("dequeue"), queue, {DT_FLOAT});
   QueueSize size(root.WithOpName("size"), queue);
 
-  std::vector<Tensor> outputs;
-  TensorShape sp({1, 224, 224, 3});
-  auto input = Variable(root, sp, DT_FLOAT);
   std::vector<Output> variables(10);
-  variables[0] =
-      Assign(root, input, RandomNormal(root, {1, 224, 224, 3}, DT_FLOAT));
-  TF_CHECK_OK(session.Run({}, {variables[0]}, &outputs));
-  variables[1] =
-      Assign(root, input, RandomNormal(root, {1, 224, 224, 3}, DT_FLOAT));
-  TF_CHECK_OK(session.Run({}, {variables[1]}, &outputs));
 
   Vgg16 = {
       // Block 1
@@ -160,12 +196,16 @@ int main() {
   };
   std::cout << Vgg16.size() << std::endl;
 
-  std::thread t1(worker, 0, std::ref(session), std::ref(variables),
-                 std::ref(enqueue), std::ref(dequeue), std::ref(size),
-                 getenv("REDIS0"));
-  std::thread t2(worker, 1, std::ref(session), std::ref(variables),
-                 std::ref(enqueue), std::ref(dequeue), std::ref(size),
-                 getenv("REDIS1"));
+  auto send_recv =
+      std::vector<std::vector<int>>(2, std::vector<int>(2, MEM_INIT));
+  status = 0;
+
+  std::thread t1(worker, 0, std::ref(root), std::ref(session),
+                 std::ref(variables), std::ref(send_recv), std::ref(enqueue),
+                 std::ref(dequeue), std::ref(size), getenv("REDIS0"));
+  std::thread t2(worker, 1, std::ref(root), std::ref(session),
+                 std::ref(variables), std::ref(send_recv), std::ref(enqueue),
+                 std::ref(dequeue), std::ref(size), getenv("REDIS1"));
 
   t1.join();
   t2.join();
