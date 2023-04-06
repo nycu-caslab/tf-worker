@@ -75,7 +75,6 @@ void worker(int worker_id, Scope &root, ClientSession &session,
         LOGs("------------------------");
         ed = end;
         LOGs("Total:", ed - st);
-        LOGs("------------------------");
       }
 
     } else if (cmd == "push") {
@@ -116,7 +115,7 @@ void worker(int worker_id, Scope &root, ClientSession &session,
       iss >> batch_size;
 
       std::vector<Tensor> outputs;
-      TensorShape sp({16, 224, 224, 3});
+      TensorShape sp({batch_size, 224, 224, 3});
       auto input = Variable(root, sp, DT_FLOAT);
       variables[worker_id] = Assign(
           root, input, RandomNormal(root, {batch_size, 224, 224, 3}, DT_FLOAT));

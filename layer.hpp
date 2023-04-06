@@ -24,7 +24,7 @@ public:
   Flat(Scope &root) : root(root), Op(root) {}
 
   Output forward(ClientSession &session, Input input) {
-    auto res = Reshape(root, input, {-1, 8});
+    auto res = Reshape(root, input, {-1, 32});
     std::vector<Tensor> outputs;
     TF_CHECK_OK(session.Run({res}, &outputs));
     return res;
