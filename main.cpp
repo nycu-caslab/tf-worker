@@ -9,10 +9,12 @@
 #include <torch/nn/modules/pooling.h>
 #include <torch/torch.h>
 
-#include "json.hpp"
+#include "model.hpp"
 #include "utils.hpp"
+
 using namespace std;
 using namespace chrono;
+using json = nlohmann::json;
 
 std::atomic_int status;
 
@@ -22,7 +24,8 @@ const int MEM_RECV = 2;
 std::atomic_long st, ed;
 torch::nn::Sequential Vgg16;
 
-void worker(int worker_id, vector<torch::Tensor> &variables, string redis) {
+void worker(int worker_id, vector<torch::Tensor> &variables,
+            vector<Model> &models, string redis) {
   LOGs("Start pooling redis", redis);
 
   redisContext *c = redisConnect(redis.c_str(), 6379);
@@ -44,7 +47,6 @@ void worker(int worker_id, vector<torch::Tensor> &variables, string redis) {
 
     result = reply->element[1]->str;
     LOGs("Worker", worker_id, ", Input: ", result);
-    cout << "gogogo";
 
     std::istringstream iss(result);
     freeReplyObject(reply);
@@ -59,14 +61,13 @@ void worker(int worker_id, vector<torch::Tensor> &variables, string redis) {
                        std::chrono::system_clock::now().time_since_epoch())
                        .count();
 
-      // Vgg16[layer_id]->forward(variables[worker_id]);
+      models[model_id].forward_layer(layer_id, variables[worker_id]);
 
       LOGs("Forwarded: Vgg16-", layer_id);
       auto end = std::chrono::duration_cast<std::chrono::milliseconds>(
                      std::chrono::system_clock::now().time_since_epoch())
                      .count();
       LOGs(worker_id, ":", start, end);
-      cout << "gone";
 
       if (layer_id == 0)
         if (layer_id == 36) {
@@ -101,83 +102,33 @@ int main() {
 
   LOGs("Process start");
 
-  auto options = torch::TensorOptions().device(torch::kCUDA, 0);
+  auto options = torch::TensorOptions().device(torch::kCPU);
   std::vector<torch::Tensor> variables(10);
   variables[0] = torch::rand({16, 3, 244, 244}, options);
   variables[1] = torch::rand({16, 3, 244, 244}, options);
 
-  Vgg16 = torch::nn::Sequential(
-      // Block 1
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(3, 64, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(64, 64, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2)),
+  vector<Model> models;
+  int n = get_models_from_json(models, "schema.json");
+  for (int i = 0; i < n; i++) {
+    cout << "Model " << i << ": " << models[i].size() << "\n";
+    for (int j = 0; j < models[i].size(); j++) {
+      cout << "Forwarding layer " << j << "\n";
+      cout << "Shape: " << torch::_shape_as_tensor(variables[i]) << "\n";
+      variables[i] = models[i].forward_layer(j, variables[i]);
+    }
+  }
 
-      // Block 2
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(64, 128, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(128, 128, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2)),
-
-      // Block 3
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(128, 256, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(256, 256, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(256, 256, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2)),
-
-      // Block 4
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(256, 512, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(512, 512, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(512, 512, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2)),
-
-      // Block 5
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(512, 512, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(512, 512, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::Conv2d(
-          torch::nn::Conv2dOptions(512, 512, 3).stride(1).bias(false)),
-      torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2))
-
-      //  Flat(root),
-      //  FC(root, session, 512 * 7 * 7, 4096),
-      //  torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      //  FC(root, session, 4096, 4096),
-      //  torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)),
-      //  FC(root, session, 4096, 10),
-  );
-  torch::Device device(torch::kCUDA, 0);
-  Vgg16->to(device);
-  std::cout << Vgg16->size() << std::endl;
+  // torch::Device device(torch::kCUDA, 0);
+  // Vgg16->to(device);
 
   status = 0;
 
-  std::thread t1(worker, 0, std::ref(variables), getenv("REDIS0"));
-  std::thread t2(worker, 1, std::ref(variables), getenv("REDIS1"));
+  // std::thread t1(worker, 0, std::ref(variables), std::ref(models),
+  //                getenv("REDIS0"));
+  // std::thread t2(worker, 1, std::ref(variables), std::ref(models),
+  //                getenv("REDIS1"));
 
-  t1.join();
-  t2.join();
+  // t1.join();
+  // t2.join();
   return 0;
 }

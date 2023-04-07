@@ -1,0 +1,111 @@
+#ifndef MODEL_HPP
+#define MODEL_HPP
+
+#include "json.hpp"
+#include <fstream>
+#include <iostream>
+#include <torch/torch.h>
+#include <vector>
+
+using json = nlohmann::json;
+using namespace std;
+
+enum class op { conv, relu, maxpool, linear, flat };
+
+class Layer {
+public:
+  op type;
+  Layer(op type) : type(type){};
+};
+
+class Model {
+public:
+  int id;
+  string name;
+  Model(int id, string name) : id(id), name(name){};
+  size_t size() { return layers->size(); }
+
+  torch::Tensor forward_layer(int layer_id, torch::Tensor &tensor) {
+    assert(layer_data.size() > layer_id && layers->size() > layer_id);
+    switch (layer_data[layer_id].type) {
+    case op::conv:
+      return layers->at<torch::nn::Conv2dImpl>(layer_id).forward(tensor);
+    case op::relu:
+      return layers->at<torch::nn::ReLUImpl>(layer_id).forward(tensor);
+    case op::maxpool:
+      return layers->at<torch::nn::MaxPool2dImpl>(layer_id).forward(tensor);
+    case op::linear:
+      return layers->at<torch::nn::LinearImpl>(layer_id).forward(tensor);
+    case op::flat:
+      return layers->at<torch::nn::FlattenImpl>(layer_id).forward(tensor);
+    }
+    return tensor;
+  }
+
+  torch::Tensor forward(torch::Tensor &tensor) {
+    return layers->forward(tensor);
+  }
+
+  void add_conv_layer(int in_channels, int out_channels, int filter_size,
+                      int stride, int padding) {
+    this->layers->push_back(torch::nn::Conv2d(
+        torch::nn::Conv2dOptions(in_channels, out_channels, filter_size)
+            .stride(stride)
+            .padding(padding)
+            .bias(false)));
+    this->layer_data.push_back(Layer(op::conv));
+  }
+  void add_relu_layer() {
+    this->layers->push_back(
+        torch::nn::ReLU(torch::nn::ReLUOptions().inplace(true)));
+    this->layer_data.push_back(Layer(op::relu));
+  }
+
+  void add_maxpool_layer(int size, int stride) {
+    this->layers->push_back(
+        torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(size).stride(stride)));
+    this->layer_data.push_back(Layer(op::maxpool));
+  }
+  void add_linear_layer(int in_channels, int out_channels) {
+    this->layers->push_back(torch::nn::Linear(
+        torch::nn ::LinearOptions(in_channels, out_channels)));
+    this->layer_data.push_back(Layer(op::linear));
+  }
+  void add_flat_layer() {
+    this->layers->push_back(torch::nn::Flatten(
+        torch::nn::FlattenOptions().start_dim(1).end_dim(3)));
+    this->layer_data.push_back(Layer(op::flat));
+  }
+
+private:
+  torch::nn::Sequential layers;
+  vector<Layer> layer_data;
+};
+
+int get_models_from_json(vector<Model> &models, string filename) {
+  ifstream f(filename);
+  json data = json::parse(f);
+  for (int i = 0; i < data["Models"].size(); i++) {
+    models.push_back(Model(i, data["Models"][i]["name"]));
+    for (auto &layer : data["Models"][i]["layers"]) {
+      if (layer["type"] == "conv") {
+        models[i].add_conv_layer(
+            layer["params"]["in_channels"], layer["params"]["out_channels"],
+            layer["params"]["filter_size"], layer["params"]["stride"],
+            layer["params"]["padding"]);
+      } else if (layer["type"] == "relu") {
+        models[i].add_relu_layer();
+      } else if (layer["type"] == "maxpool") {
+        models[i].add_maxpool_layer(layer["params"]["ksize"],
+                                    layer["params"]["kstride"]);
+      } else if (layer["type"] == "linear") {
+        models[i].add_linear_layer(layer["params"]["in_channels"],
+                                   layer["params"]["out_channels"]);
+      } else if (layer["type"] == "flat") {
+        models[i].add_flat_layer();
+      }
+    }
+  }
+  return models.size();
+}
+#endif // !MODEL_HPP

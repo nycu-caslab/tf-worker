@@ -1,163 +1,259 @@
 {
-  "Model": {
-    "id": 0
-    "name": "vgg16",
-    "layers": [
-      {
-        "id": 0,
-        "type": "conv",
-        "params": {
-          "in_channels": 3,
-          "out_channels": 64,
-          "filter_size": 3,
-          "stride": 1
+  "Models": [
+    {
+      "name": "vgg16",
+      "layers": [
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 3,
+            "out_channels": 64,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 64,
+            "out_channels": 64,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 2,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 64,
+            "out_channels": 128,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 128,
+            "out_channels": 128,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 2,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 128,
+            "out_channels": 256,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 256,
+            "out_channels": 256,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 256,
+            "out_channels": 256,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 2,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 256,
+            "out_channels": 512,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 512,
+            "out_channels": 512,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 512,
+            "out_channels": 512,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 2,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 512,
+            "out_channels": 512,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 512,
+            "out_channels": 512,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 512,
+            "out_channels": 512,
+            "filter_size": 3,
+            "stride": 1,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 2,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "flat",
+          "params": {}
+        },
+        {
+          "type": "linear",
+          "params": {
+            "in_channels": 25088,
+            "out_channels": 4096
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "linear",
+          "params": {
+            "in_channels": 4096,
+            "out_channels": 4096
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "linear",
+          "params": {
+            "in_channels": 4096,
+            "out_channels": 10
+          }
         }
-      },
-      {
-        "id": 1,
-        "type": "act",
-        "params": {}
-      },
-      {
-        "id": 2,
-        "type": "conv",
-        "params": {
-          "in_channels": 64,
-          "out_channels": 64,
-          "filter_size": 3,
-          "stride": 1
-        }
-      },
-      {
-        "id": 3,
-        "type": "act",
-        "params": {}
-      },
-      {
-        "id": 4,
-        "type": "pool",
-        "params": {
-          "ksize": 2,
-          "kstride": 2
-        }
-      },
-      {
-        "id": 5,
-        "type": "conv",
-        "params": {
-          "in_channels": 64,
-          "out_channels": 128,
-          "filter_size": 3,
-          "stride": 1
-        }
-      },
-      {
-        "id": 6,
-        "type": "act",
-        "params": {}
-      },
-      {
-        "id": 7,
-        "type": "conv",
-        "params": {
-          "in_channels": 128,
-          "out_channels": 128,
-          "filter_size": 3,
-          "stride": 1
-        }
-      },
-      {
-        "id": 8,
-        "type": "act",
-        "params": {}
-      },
-      {
-        "id": 9,
-        "type": "pool",
-        "params": {
-          "ksize": 2,
-          "kstride": 2
-        }
-      },
-      {
-        "id": 10,
-        "type": "conv",
-        "params": {
-          "in_channels": 128,
-          "out_channels": 256,
-          "filter_size": 3,
-          "stride": 1
-        }
-      },
-      {
-        "id": 11,
-        "type": "act",
-        "params": {}
-      },
-      {
-        "id": 12,
-        "type": "conv",
-        "params": {
-          "in_channels": 256,
-          "out_channels": 256,
-          "filter_size": 3,
-          "stride": 1
-        }
-      },
-      {
-        "id": 13,
-        "type": "act",
-        "params": {}
-      },
-      {
-        "id": 14,
-        "type": "conv",
-        "params": {
-          "in_channels": 256,
-          "out_channels": 256,
-          "filter_size": 3,
-          "stride": 1
-        }
-      },
-      {
-        "id": 15,
-        "type": "act",
-        "params": {}
-      },
-      {
-        "id": 16,
-        "type": "pool",
-        "params": {
-          "ksize": 2,
-          "kstride": 2
-        }
-      },
-      {
-        "id": 17,
-        "type": "fc",
-        "params": {
-          "in_channels": 32,
-          "out_channels": 64
-        }
-      },
-      {
-        "id": 18,
-        "type": "op",
-        "params": {
-          "ksize": 2,
-          "stride": 3
-        }
-      },
-      {
-        "id": 19,
-        "type": "flat",
-        "params": {}
-      },
-      {
-        "id": 20,
-        "type": "act",
-        "params": {}
-      },
-    ]
-  }
+      ]
+    }
+  ]
 }
