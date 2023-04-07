@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/muller/multigpu-scheduler/tf-worker/build",
+  "command": "/usr/bin/c++  -DUSE_C10D_GLOO -DUSE_C10D_NCCL -DUSE_DISTRIBUTED -DUSE_RPC -DUSE_TENSORPIPE -isystem /home/muller/multigpu-scheduler/tf-worker/libtorch/include -isystem /home/muller/multigpu-scheduler/tf-worker/libtorch/include/torch/csrc/api/include -isystem /usr/local/cuda/include   -D_GLIBCXX_USE_CXX11_ABI=1   -D_GLIBCXX_USE_CXX11_ABI=1 -std=gnu++14 -o CMakeFiles/main.dir/main.cpp.o -c /home/muller/multigpu-scheduler/tf-worker/main.cpp",
+  "file": "/home/muller/multigpu-scheduler/tf-worker/main.cpp"
+}
+]

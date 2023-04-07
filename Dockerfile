@@ -1,8 +1,4 @@
-FROM archlinux
+FROM nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04
 
-RUN sed -i '1s/^/Server = http:\/\/archlinux.cs.nctu.edu.tw\/$repo\/os\/$arch\n/' /etc/pacman.d/mirrorlist
-RUN pacman -Sy archlinux-keyring --noconfirm
-RUN pacman -Sy base-devel --noconfirm
-RUN pacman -Sy bazel cmake git tensorflow-cuda wget cuda cudnn nvidia hiredis clang --noconfirm
-
-CMD ["/tf-worker/worker"]
+RUN apt update
+RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt -y install cmake libhiredis-dev

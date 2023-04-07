@@ -1,3 +1,5 @@
+libtorch/
+build/
 tf-worker/log.txt
 
 # Created by https://www.toptal.com/developers/gitignore/api/c++,vim
