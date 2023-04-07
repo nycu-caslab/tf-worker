@@ -1,3 +1,4 @@
+.cache
 libtorch/
 build/
 tf-worker/log.txt
