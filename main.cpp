@@ -9,6 +9,7 @@
 #include <torch/nn/modules/container/modulelist.h>
 #include <torch/nn/modules/pooling.h>
 #include <torch/torch.h>
+#include <unistd.h>
 
 #include "model.hpp"
 #include "utils.hpp"
@@ -22,10 +23,11 @@ const int MEM_INIT = 0;
 const int MEM_SENT = 1;
 const int MEM_RECV = 2;
 std::atomic_long st, ed;
+std::vector<torch::Tensor> variables(10);
 torch::Device device(torch::kCPU);
 
-void worker(int worker_id, vector<torch::Tensor> &variables,
-            vector<Model> &models, string redis, string redis_done) {
+void worker(int worker_id, vector<Model> &models, string redis,
+            string redis_done) {
   LOGs("Start pooling redis", redis);
 
   redisContext *c = redisConnect(redis.c_str(), 6379);
@@ -40,6 +42,9 @@ void worker(int worker_id, vector<torch::Tensor> &variables,
       LOGs("Can't allocate redis context");
     }
   }
+
+  variables[worker_id] = torch::rand({16, 3, 244, 244}).to(device);
+  sleep(1);
 
   while (true) {
     std::string result;
@@ -58,6 +63,8 @@ void worker(int worker_id, vector<torch::Tensor> &variables,
     if (cmd == "forward") {
       int task_id, model_id, layer_id, variable_id;
       iss >> task_id >> model_id >> layer_id >> variable_id;
+
+      cout << torch::_shape_as_tensor(variables[variable_id]);
 
       variables[variable_id] =
           models[model_id].forward_layer(layer_id, variables[variable_id]);
@@ -85,7 +92,6 @@ void worker(int worker_id, vector<torch::Tensor> &variables,
       int batch_size;
       iss >> batch_size;
       variables[worker_id] = torch::rand({batch_size, 3, 244, 244}).to(device);
-      at::cuda::CUDACachingAllocator::emptyCache();
     }
   }
 }
@@ -127,8 +133,6 @@ int main() {
     device = torch::Device(torch::kCUDA);
   }
 
-  std::vector<torch::Tensor> variables(10);
-
   vector<Model> models;
   int n = get_models_from_json(models, "schema.json");
   for (auto &model : models) {
@@ -152,10 +156,10 @@ int main() {
   // test2.join();
 
   // worker(0, variables, models, getenv("REDIS0"));
-  std::thread t1(worker, 0, std::ref(variables), std::ref(models),
-                 getenv("REDIS0"), getenv("REDISDONE"));
-  std::thread t2(worker, 1, std::ref(variables), std::ref(models),
-                 getenv("REDIS1"), getenv("REDISDONE"));
+  std::thread t1(worker, 0, std::ref(models), getenv("REDIS0"),
+                 getenv("REDISDONE"));
+  std::thread t2(worker, 1, std::ref(models), getenv("REDIS1"),
+                 getenv("REDISDONE"));
 
   t1.join();
   t2.join();
