@@ -1,4 +1,5 @@
 #include <atomic>
+#include <c10/cuda/CUDACachingAllocator.h>
 #include <chrono>
 #include <fstream>
 #include <hiredis/hiredis.h>
@@ -22,7 +23,7 @@ const int MEM_INIT = 0;
 const int MEM_SENT = 1;
 const int MEM_RECV = 2;
 std::atomic_long st, ed;
-torch::nn::Sequential Vgg16;
+torch::Device device(torch::kCPU);
 
 void worker(int worker_id, vector<torch::Tensor> &variables,
             vector<Model> &models, string redis) {
@@ -53,34 +54,37 @@ void worker(int worker_id, vector<torch::Tensor> &variables,
 
     string cmd;
     iss >> cmd;
+
     if (cmd == "forward") {
-      cout << "went";
       int model_id, layer_id;
       iss >> model_id >> layer_id;
-      auto start = std::chrono::duration_cast<std::chrono::milliseconds>(
+      auto start = std::chrono::duration_cast<std::chrono::microseconds>(
                        std::chrono::system_clock::now().time_since_epoch())
                        .count();
 
-      models[model_id].forward_layer(layer_id, variables[worker_id]);
+      variables[worker_id] =
+          models[model_id].forward_layer(layer_id, variables[worker_id]);
 
       LOGs("Forwarded: Vgg16-", layer_id);
-      auto end = std::chrono::duration_cast<std::chrono::milliseconds>(
+      auto end = std::chrono::duration_cast<std::chrono::microseconds>(
                      std::chrono::system_clock::now().time_since_epoch())
                      .count();
       LOGs(worker_id, ":", start, end);
 
-      if (layer_id == 0)
-        if (layer_id == 36) {
-          st = start;
-          LOGs("------------------------");
-          ed = end;
-          LOGs("Total:", ed - st);
-        }
-
+      if (layer_id == 0) {
+        st = start;
+      }
+      if (layer_id == 36) {
+        LOGs("------------------------");
+        ed = end;
+        LOGs("Total:", ed - st);
+      }
     } else if (cmd == "send") {
       int src, dst;
       iss >> src >> dst;
       variables[dst] = variables[src];
+      while (status != MEM_INIT) {
+      }
       status = MEM_SENT;
       LOGs("Sent ", src, "to", dst);
     } else if (cmd == "recv") {
@@ -93,42 +97,80 @@ void worker(int worker_id, vector<torch::Tensor> &variables,
     } else if (cmd == "create") {
       int batch_size;
       iss >> batch_size;
+      variables[worker_id] = torch::rand({batch_size, 3, 244, 244}).to(device);
+      at::cuda::CUDACachingAllocator::emptyCache();
+    }
+  }
+}
+
+void test_torch(vector<Model> &models) {
+  int n = models.size();
+  for (int i = 0; i < n; i++) {
+    // cout << "Model " << i << ": " << models[i].size() << "\n";
+    for (int o = 0; o < 20; o++) {
+      torch::Tensor variable = torch::rand({16, 3, 244, 244}).to(device);
+      // if (torch::cuda::is_available()) {
+      //   torch::cuda::synchronize();
+      // }
+      // auto start = std::chrono::duration_cast<std::chrono::microseconds>(
+      //                  std::chrono::system_clock::now().time_since_epoch())
+      //                  .count();
+      for (int j = 0; j < models[i].size(); j++) {
+        // cout << "Forwarding layer " << j << "\n";
+        // cout << "Shape: " << torch::_shape_as_tensor(variables[i]) <<
+        // "\n";
+        variable = models[i].forward_layer(j, variable);
+      }
+      // if (torch::cuda::is_available()) {
+      //   torch::cuda::synchronize();
+      // }
+      // auto end = std::chrono::duration_cast<std::chrono::microseconds>(
+      //                std::chrono::system_clock::now().time_since_epoch())
+      //                .count();
+      // cout << end - start << "\n";
     }
   }
 }
 
 int main() {
-  std::ofstream stream;
-
   LOGs("Process start");
 
-  auto options = torch::TensorOptions().device(torch::kCPU);
+  if (torch::cuda::is_available()) {
+    cout << "Using CUDA\n";
+    device = torch::Device(torch::kCUDA);
+  }
+
   std::vector<torch::Tensor> variables(10);
-  variables[0] = torch::rand({16, 3, 244, 244}, options);
-  variables[1] = torch::rand({16, 3, 244, 244}, options);
 
   vector<Model> models;
   int n = get_models_from_json(models, "schema.json");
-  for (int i = 0; i < n; i++) {
-    cout << "Model " << i << ": " << models[i].size() << "\n";
-    for (int j = 0; j < models[i].size(); j++) {
-      cout << "Forwarding layer " << j << "\n";
-      cout << "Shape: " << torch::_shape_as_tensor(variables[i]) << "\n";
-      variables[i] = models[i].forward_layer(j, variables[i]);
-    }
+  for (auto &model : models) {
+    model.to(device);
   }
-
-  // torch::Device device(torch::kCUDA, 0);
-  // Vgg16->to(device);
 
   status = 0;
 
-  // std::thread t1(worker, 0, std::ref(variables), std::ref(models),
-  //                getenv("REDIS0"));
-  // std::thread t2(worker, 1, std::ref(variables), std::ref(models),
-  //                getenv("REDIS1"));
+  // for (int i = 0; i < n; i++) {
+  //   for (int o = 0; o < 20; o++) {
+  //     torch::Tensor variable = torch::rand({16, 3, 244, 244}).to(device);
+  //     for (int j = 0; j < models[i].size(); j++) {
+  //       variable = models[i].forward_layer(j, variable);
+  //     }
+  //   }
+  // }
 
-  // t1.join();
-  // t2.join();
+  // thread test1(test_torch, ref(models));
+  // thread test2(test_torch, ref(models));
+  // test1.join();
+  // test2.join();
+
+  // worker(0, variables, models, getenv("REDIS0"));
+  std::thread t1(worker, 0, std::ref(variables), std::ref(models),
+                 getenv("REDIS0"));
+  std::thread t2(worker, 1, std::ref(variables), std::ref(models),
+                 getenv("REDIS1"));
+
+  t1.join();
+  t2.join();
   return 0;
 }

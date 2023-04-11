@@ -46,6 +46,8 @@ public:
     return layers->forward(tensor);
   }
 
+  void to(torch::Device &device) { this->layers->to(device); }
+
   void add_conv_layer(int in_channels, int out_channels, int filter_size,
                       int stride, int padding) {
     this->layers->push_back(torch::nn::Conv2d(
