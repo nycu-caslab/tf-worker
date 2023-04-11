@@ -15,7 +15,6 @@
 
 using namespace std;
 using namespace chrono;
-using json = nlohmann::json;
 
 std::atomic_int status;
 
@@ -26,10 +25,11 @@ std::atomic_long st, ed;
 torch::Device device(torch::kCPU);
 
 void worker(int worker_id, vector<torch::Tensor> &variables,
-            vector<Model> &models, string redis) {
+            vector<Model> &models, string redis, string redis_done) {
   LOGs("Start pooling redis", redis);
 
   redisContext *c = redisConnect(redis.c_str(), 6379);
+  redisContext *done = redisConnect(redis_done.c_str(), 6379);
 
   LOGs("Creating redis instance");
 
@@ -56,29 +56,16 @@ void worker(int worker_id, vector<torch::Tensor> &variables,
     iss >> cmd;
 
     if (cmd == "forward") {
-      int model_id, layer_id;
-      iss >> model_id >> layer_id;
-      auto start = std::chrono::duration_cast<std::chrono::microseconds>(
-                       std::chrono::system_clock::now().time_since_epoch())
-                       .count();
+      int task_id, model_id, layer_id, variable_id;
+      iss >> task_id >> model_id >> layer_id >> variable_id;
 
-      variables[worker_id] =
-          models[model_id].forward_layer(layer_id, variables[worker_id]);
+      variables[variable_id] =
+          models[model_id].forward_layer(layer_id, variables[variable_id]);
+
+      std::string cmd = to_string(task_id) + " " + to_string(worker_id);
+      reply = (redisReply *)redisCommand(done, "RPUSH done %s", cmd.c_str());
 
       LOGs("Forwarded: Vgg16-", layer_id);
-      auto end = std::chrono::duration_cast<std::chrono::microseconds>(
-                     std::chrono::system_clock::now().time_since_epoch())
-                     .count();
-      LOGs(worker_id, ":", start, end);
-
-      if (layer_id == 0) {
-        st = start;
-      }
-      if (layer_id == 36) {
-        LOGs("------------------------");
-        ed = end;
-        LOGs("Total:", ed - st);
-      }
     } else if (cmd == "send") {
       int src, dst;
       iss >> src >> dst;
@@ -166,9 +153,9 @@ int main() {
 
   // worker(0, variables, models, getenv("REDIS0"));
   std::thread t1(worker, 0, std::ref(variables), std::ref(models),
-                 getenv("REDIS0"));
+                 getenv("REDIS0"), getenv("REDISDONE"));
   std::thread t2(worker, 1, std::ref(variables), std::ref(models),
-                 getenv("REDIS1"));
+                 getenv("REDIS1"), getenv("REDISDONE"));
 
   t1.join();
   t2.join();
