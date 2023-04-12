@@ -43,9 +43,6 @@ void worker(int worker_id, vector<Model> &models, string redis,
     }
   }
 
-  variables[worker_id] = torch::rand({16, 3, 244, 244}).to(device);
-  sleep(1);
-
   while (true) {
     std::string result;
     redisReply *reply;
@@ -63,8 +60,9 @@ void worker(int worker_id, vector<Model> &models, string redis,
     if (cmd == "forward") {
       int task_id, model_id, layer_id, variable_id;
       iss >> task_id >> model_id >> layer_id >> variable_id;
-
-      cout << torch::_shape_as_tensor(variables[variable_id]);
+      if (layer_id == 0) {
+        variables[variable_id] = torch::rand({16, 3, 244, 244}).to(device);
+      }
 
       variables[variable_id] =
           models[model_id].forward_layer(layer_id, variables[variable_id]);
