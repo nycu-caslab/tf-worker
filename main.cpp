@@ -5,6 +5,7 @@
 #include <hiredis/hiredis.h>
 #include <iostream>
 #include <stdio.h>
+#include <stdlib.h>
 #include <torch/nn/modules/activation.h>
 #include <torch/nn/modules/container/modulelist.h>
 #include <torch/nn/modules/pooling.h>
@@ -28,6 +29,12 @@ torch::Device device(torch::kCPU);
 
 void worker(int worker_id, vector<Model> &models, string redis,
             string redis_done) {
+  if (worker_id == 0) {
+    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "10%", 1);
+  } else {
+    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "90%", 1);
+  }
+
   LOGs("Start pooling redis", redis);
 
   redisContext *c = redisConnect(redis.c_str(), 6379);
@@ -79,6 +86,25 @@ void worker(int worker_id, vector<Model> &models, string redis,
   }
 }
 
+void test_main(vector<Model> &models) {
+  for (int i = 0; i < 10; i++) {
+    variables[0] = torch::rand({16, 3, 244, 244}).to(device);
+    variables[1] = torch::rand({16, 3, 244, 244}).to(device);
+    int t1 = chrono::duration_cast<chrono::microseconds>(
+                 chrono::system_clock::now().time_since_epoch())
+                 .count();
+    models[0].forward(variables[0]);
+    int t2 = chrono::duration_cast<chrono::microseconds>(
+                 chrono::system_clock::now().time_since_epoch())
+                 .count();
+    models[1].forward(variables[1]);
+    int t3 = chrono::duration_cast<chrono::microseconds>(
+                 chrono::system_clock::now().time_since_epoch())
+                 .count();
+    cout << t2 - t1 << " " << t3 - t2 << "\n";
+  }
+}
+
 int main() {
   LOGs("Process start");
 
@@ -92,6 +118,8 @@ int main() {
   for (auto &model : models) {
     model.to(device);
   }
+
+  // test_main(models);
 
   std::thread t1(worker, 0, std::ref(models), getenv("REDIS0"),
                  getenv("REDISDONE"));

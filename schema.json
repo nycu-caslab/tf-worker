@@ -254,6 +254,141 @@
           }
         }
       ]
+    },
+    {
+      "name": "alexnet",
+      "layers": [
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 3,
+            "out_channels": 64,
+            "filter_size": 11,
+            "stride": 4,
+            "padding": 2
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 3,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 64,
+            "out_channels": 192,
+            "filter_size": 5,
+            "stride": 0,
+            "padding": 2
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 3,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels": 192,
+            "out_channels": 384,
+            "filter_size": 3,
+            "stride": 0,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels":384,
+            "out_channels": 256,
+            "filter_size": 3,
+            "stride": 0,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "conv",
+          "params": {
+            "in_channels":256,
+            "out_channels": 256,
+            "filter_size": 3,
+            "stride": 0,
+            "padding": 1
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "maxpool",
+          "params": {
+            "ksize": 3,
+            "kstride": 2
+          }
+        },
+        {
+          "type": "avgpool",
+          "params": {
+            "size": 6
+          }
+        },
+        {
+          "type": "flat",
+          "params": {}
+        },
+        {
+          "type": "linear",
+          "params": {
+            "in_channels": 9216,
+            "out_channels": 4096
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "linear",
+          "params": {
+            "in_channels": 4096,
+            "out_channels": 4096
+          }
+        },
+        {
+          "type": "relu",
+          "params": {}
+        },
+        {
+          "type": "linear",
+          "params": {
+            "in_channels": 4096,
+            "out_channels": 10
+          }
+        }
+      ]
     }
   ]
 }

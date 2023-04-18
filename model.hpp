@@ -10,7 +10,7 @@
 using json = nlohmann::json;
 using namespace std;
 
-enum class op { conv, relu, maxpool, linear, flat };
+enum class op { conv, relu, maxpool, linear, flat, avgpool };
 
 class Layer {
 public:
@@ -38,6 +38,9 @@ public:
       return layers->at<torch::nn::LinearImpl>(layer_id).forward(tensor);
     case op::flat:
       return layers->at<torch::nn::FlattenImpl>(layer_id).forward(tensor);
+    case op::avgpool:
+      return layers->at<torch::nn::AdaptiveAvgPool2dImpl>(layer_id).forward(
+          tensor);
     }
     return tensor;
   }
@@ -50,11 +53,14 @@ public:
 
   void add_conv_layer(int in_channels, int out_channels, int filter_size,
                       int stride, int padding) {
-    this->layers->push_back(torch::nn::Conv2d(
+    auto options =
         torch::nn::Conv2dOptions(in_channels, out_channels, filter_size)
-            .stride(stride)
             .padding(padding)
-            .bias(false)));
+            .bias(false);
+    if (stride) {
+      options.stride(stride);
+    }
+    this->layers->push_back(torch::nn::Conv2d(options));
     this->layer_data.push_back(Layer(op::conv));
   }
   void add_relu_layer() {
@@ -64,8 +70,11 @@ public:
   }
 
   void add_maxpool_layer(int size, int stride) {
-    this->layers->push_back(
-        torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(size).stride(stride)));
+    auto options = torch::nn::MaxPool2dOptions(size);
+    if (stride) {
+      options.stride(stride);
+    }
+    this->layers->push_back(torch::nn::MaxPool2d(options));
     this->layer_data.push_back(Layer(op::maxpool));
   }
   void add_linear_layer(int in_channels, int out_channels) {
@@ -77,6 +86,11 @@ public:
     this->layers->push_back(torch::nn::Flatten(
         torch::nn::FlattenOptions().start_dim(1).end_dim(3)));
     this->layer_data.push_back(Layer(op::flat));
+  }
+  void add_avgpool_layer(int size) {
+    this->layers->push_back(torch::nn::AdaptiveAvgPool2d(
+        torch::nn::AdaptiveAvgPool2dOptions({size, size})));
+    this->layer_data.push_back(Layer(op::avgpool));
   }
 
 private:
@@ -105,6 +119,8 @@ int get_models_from_json(vector<Model> &models, string filename) {
                                    layer["params"]["out_channels"]);
       } else if (layer["type"] == "flat") {
         models[i].add_flat_layer();
+      } else if (layer["type"] == "avgpool") {
+        models[i].add_avgpool_layer(layer["params"]["size"]);
       }
     }
   }
