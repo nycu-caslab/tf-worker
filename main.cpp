@@ -68,7 +68,7 @@ void worker(int worker_id, vector<Model> &models, string redis,
       int task_id, model_id, layer_id, variable_id;
       iss >> task_id >> model_id >> layer_id >> variable_id;
       if (layer_id == 0) {
-        variables[variable_id] = torch::rand({16, 3, 244, 244}).to(device);
+        variables[variable_id] = torch::rand({32, 3, 244, 244}).to(device);
       }
 
       variables[variable_id] =
@@ -90,17 +90,17 @@ void test_main(vector<Model> &models) {
   for (int i = 0; i < 10; i++) {
     variables[0] = torch::rand({16, 3, 244, 244}).to(device);
     variables[1] = torch::rand({16, 3, 244, 244}).to(device);
-    int t1 = chrono::duration_cast<chrono::microseconds>(
-                 chrono::system_clock::now().time_since_epoch())
-                 .count();
+    long long int t1 = chrono::duration_cast<chrono::microseconds>(
+                           chrono::system_clock::now().time_since_epoch())
+                           .count();
     models[0].forward(variables[0]);
-    int t2 = chrono::duration_cast<chrono::microseconds>(
-                 chrono::system_clock::now().time_since_epoch())
-                 .count();
+    long long int t2 = chrono::duration_cast<chrono::microseconds>(
+                           chrono::system_clock::now().time_since_epoch())
+                           .count();
     models[1].forward(variables[1]);
-    int t3 = chrono::duration_cast<chrono::microseconds>(
-                 chrono::system_clock::now().time_since_epoch())
-                 .count();
+    long long int t3 = chrono::duration_cast<chrono::microseconds>(
+                           chrono::system_clock::now().time_since_epoch())
+                           .count();
     cout << t2 - t1 << " " << t3 - t2 << "\n";
   }
 }
