@@ -71,54 +71,10 @@ void worker(int worker_id, vector<Model> &models, string redis,
       reply = (redisReply *)redisCommand(done, "RPUSH done %s", cmd.c_str());
 
       LOGs("Forwarded: Vgg16-", layer_id);
-    } else if (cmd == "send") {
-      int src, dst;
-      iss >> src >> dst;
-      variables[dst] = variables[src];
-      while (status != MEM_INIT) {
-      }
-      status = MEM_SENT;
-      LOGs("Sent ", src, "to", dst);
-    } else if (cmd == "recv") {
-      int src, dst;
-      iss >> src >> dst;
-      while (status != MEM_SENT) {
-      }
-      status = MEM_INIT;
-      LOGs("Recv ", src, "to", dst);
     } else if (cmd == "create") {
       int batch_size;
       iss >> batch_size;
       variables[worker_id] = torch::rand({batch_size, 3, 244, 244}).to(device);
-    }
-  }
-}
-
-void test_torch(vector<Model> &models) {
-  int n = models.size();
-  for (int i = 0; i < n; i++) {
-    // cout << "Model " << i << ": " << models[i].size() << "\n";
-    for (int o = 0; o < 20; o++) {
-      torch::Tensor variable = torch::rand({16, 3, 244, 244}).to(device);
-      // if (torch::cuda::is_available()) {
-      //   torch::cuda::synchronize();
-      // }
-      // auto start = std::chrono::duration_cast<std::chrono::microseconds>(
-      //                  std::chrono::system_clock::now().time_since_epoch())
-      //                  .count();
-      for (int j = 0; j < models[i].size(); j++) {
-        // cout << "Forwarding layer " << j << "\n";
-        // cout << "Shape: " << torch::_shape_as_tensor(variables[i]) <<
-        // "\n";
-        variable = models[i].forward_layer(j, variable);
-      }
-      // if (torch::cuda::is_available()) {
-      //   torch::cuda::synchronize();
-      // }
-      // auto end = std::chrono::duration_cast<std::chrono::microseconds>(
-      //                std::chrono::system_clock::now().time_since_epoch())
-      //                .count();
-      // cout << end - start << "\n";
     }
   }
 }
@@ -137,23 +93,6 @@ int main() {
     model.to(device);
   }
 
-  status = 0;
-
-  // for (int i = 0; i < n; i++) {
-  //   for (int o = 0; o < 20; o++) {
-  //     torch::Tensor variable = torch::rand({16, 3, 244, 244}).to(device);
-  //     for (int j = 0; j < models[i].size(); j++) {
-  //       variable = models[i].forward_layer(j, variable);
-  //     }
-  //   }
-  // }
-
-  // thread test1(test_torch, ref(models));
-  // thread test2(test_torch, ref(models));
-  // test1.join();
-  // test2.join();
-
-  // worker(0, variables, models, getenv("REDIS0"));
   std::thread t1(worker, 0, std::ref(models), getenv("REDIS0"),
                  getenv("REDISDONE"));
   std::thread t2(worker, 1, std::ref(models), getenv("REDIS1"),
