@@ -27,6 +27,25 @@ std::atomic_long st, ed;
 std::vector<torch::Tensor> variables(10);
 torch::Device device(torch::kCPU);
 
+void warmup(vector<Model> &models) {
+  for (int i = 0; i < 10; i++) {
+    variables[0] = torch::rand({16, 3, 244, 244}).to(device);
+    variables[1] = torch::rand({16, 3, 244, 244}).to(device);
+    long long int t1 = chrono::duration_cast<chrono::microseconds>(
+                           chrono::system_clock::now().time_since_epoch())
+                           .count();
+    models[0].forward(variables[0]);
+    long long int t2 = chrono::duration_cast<chrono::microseconds>(
+                           chrono::system_clock::now().time_since_epoch())
+                           .count();
+    models[1].forward(variables[1]);
+    long long int t3 = chrono::duration_cast<chrono::microseconds>(
+                           chrono::system_clock::now().time_since_epoch())
+                           .count();
+    cout << t2 - t1 << " " << t3 - t2 << "\n";
+  }
+}
+
 void worker(int worker_id, vector<Model> &models, string redis,
             string redis_done) {
   if (worker_id == 0) {
@@ -49,6 +68,12 @@ void worker(int worker_id, vector<Model> &models, string redis,
       LOGs("Can't allocate redis context");
     }
   }
+  warmup(models);
+
+  for (int i = 0; i < 10; i++)
+    variables[i] = torch::rand({32, 3, 244, 244}).to(device);
+
+  redisCommand(done, "RPUSH done %s", to_string(worker_id).c_str());
 
   while (true) {
     std::string result;
@@ -67,41 +92,23 @@ void worker(int worker_id, vector<Model> &models, string redis,
     if (cmd == "forward") {
       int task_id, model_id, layer_id, variable_id;
       iss >> task_id >> model_id >> layer_id >> variable_id;
-      if (layer_id == 0) {
-        variables[variable_id] = torch::rand({32, 3, 244, 244}).to(device);
-      }
+      // if (layer_id == 0) {
+      //   variables[variable_id] = torch::rand({32, 3, 244, 244}).to(device);
+      // }
 
+      LOGs("Created and start:", models[model_id].name, layer_id);
       variables[variable_id] =
           models[model_id].forward_layer(layer_id, variables[variable_id]);
 
       std::string cmd = to_string(task_id) + " " + to_string(worker_id);
       reply = (redisReply *)redisCommand(done, "RPUSH done %s", cmd.c_str());
 
-      LOGs("Forwarded: Vgg16-", layer_id);
+      LOGs("Forwarded:", models[model_id].name, layer_id);
     } else if (cmd == "create") {
       int batch_size;
       iss >> batch_size;
       variables[worker_id] = torch::rand({batch_size, 3, 244, 244}).to(device);
     }
-  }
-}
-
-void test_main(vector<Model> &models) {
-  for (int i = 0; i < 10; i++) {
-    variables[0] = torch::rand({16, 3, 244, 244}).to(device);
-    variables[1] = torch::rand({16, 3, 244, 244}).to(device);
-    long long int t1 = chrono::duration_cast<chrono::microseconds>(
-                           chrono::system_clock::now().time_since_epoch())
-                           .count();
-    models[0].forward(variables[0]);
-    long long int t2 = chrono::duration_cast<chrono::microseconds>(
-                           chrono::system_clock::now().time_since_epoch())
-                           .count();
-    models[1].forward(variables[1]);
-    long long int t3 = chrono::duration_cast<chrono::microseconds>(
-                           chrono::system_clock::now().time_since_epoch())
-                           .count();
-    cout << t2 - t1 << " " << t3 - t2 << "\n";
   }
 }
 
@@ -118,8 +125,6 @@ int main() {
   for (auto &model : models) {
     model.to(device);
   }
-
-  // test_main(models);
 
   std::thread t1(worker, 0, std::ref(models), getenv("REDIS0"),
                  getenv("REDISDONE"));
