@@ -46,6 +46,29 @@ void warmup(vector<Model> &models) {
   }
 }
 
+void creator(string redis_done) {
+  variables[0] = torch::rand({32, 3, 244, 244}).to(device);
+  while (true) {
+    std::string result;
+    redisReply *reply;
+    redisContext *c = redisConnect(redis_done.c_str(), 6379);
+    reply = (redisReply *)redisCommand(c, "BLPOP create 0");
+
+    result = reply->element[1]->str;
+    LOGs("Creator", ", Input: ", result);
+
+    std::istringstream iss(result);
+    freeReplyObject(reply);
+
+    int variable_id;
+    iss >> variable_id;
+    variables[variable_id] = variables[0].clone();
+    string cmd = to_string(variable_id) + " -1";
+    redisCommand(c, "RPUSH done %s", cmd.c_str());
+    LOGs("Creator", ", Created");
+  }
+}
+
 void worker(int worker_id, vector<Model> &models, string redis,
             string redis_done) {
   if (worker_id == 0) {
@@ -69,9 +92,6 @@ void worker(int worker_id, vector<Model> &models, string redis,
     }
   }
   warmup(models);
-
-  for (int i = 0; i < 10; i++)
-    variables[i] = torch::rand({32, 3, 244, 244}).to(device);
 
   redisCommand(done, "RPUSH done %s", to_string(worker_id).c_str());
 
@@ -130,6 +150,7 @@ int main() {
                  getenv("REDISDONE"));
   std::thread t2(worker, 1, std::ref(models), getenv("REDIS1"),
                  getenv("REDISDONE"));
+  std::thread c1(creator, getenv("REDISDONE"));
 
   t1.join();
   t2.join();
