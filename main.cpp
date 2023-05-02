@@ -1,12 +1,19 @@
 #include <atomic>
+
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <chrono>
+#include <cuda.h>
+#include <errno.h>
+#include <error.h>
 #include <fstream>
 #include <hiredis/hiredis.h>
 #include <iostream>
+#include <malloc.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/shm.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <torch/nn/modules/activation.h>
@@ -15,34 +22,36 @@
 #include <torch/torch.h>
 #include <unistd.h>
 
-static uint64_t *glob_var0;
-static uint64_t *glob_var1;
-static uint64_t *glob_var2;
-static uint64_t *glob_var3;
-
 #include "model.hpp"
 #include "utils.hpp"
+#define N_of_variables 10
 
 using namespace std;
 using namespace chrono;
 
-std::atomic_int status;
-
 const int MEM_INIT = 0;
 const int MEM_SENT = 1;
 const int MEM_RECV = 2;
+
 std::atomic_long st, ed;
-std::vector<torch::Tensor> variables(10);
 torch::Device device(torch::kCPU);
+
+struct variable_t {
+  cudaIpcMemHandle_t memHandle;
+  int dim[4];
+};
+
+variable_t *variables;
 
 void warmup(vector<Model> &models) {
   for (int i = 0; i < 8; i++) {
-    torch::Tensor tensor = torch::rand({16, 3, 244, 244}).to(device);
-    models[1].forward(tensor);
+    torch::Tensor tensor = torch::rand({16, 3, 224, 224}).to(device);
+    models[i % 2].forward(tensor);
   }
 }
 
 void creator(char *redis) {
+  vector<torch::Tensor> tensors(N_of_variables);
   if (torch::cuda::is_available()) {
     LOGs("Using CUDA\n");
     device = torch::Device(torch::kCUDA);
@@ -50,6 +59,7 @@ void creator(char *redis) {
 
   redisContext *c = redisConnect(redis, 6379);
   torch::Tensor input = torch::rand({32, 3, 224, 224}).to(device);
+
   while (true) {
     std::string result;
     redisReply *reply;
@@ -63,20 +73,15 @@ void creator(char *redis) {
 
     int variable_id;
     iss >> variable_id;
-    variables[variable_id] = input.clone();
-    if (variable_id == 0) {
-      *glob_var0 = (uint64_t)variables[variable_id].data_ptr<float>();
-      LOGs(glob_var0);
-    } else if (variable_id == 1) {
-      *glob_var1 = (uint64_t)variables[variable_id].data_ptr<float>();
-      LOGs(glob_var1);
-    } else if (variable_id == 2) {
-      *glob_var2 = (uint64_t)variables[variable_id].data_ptr<float>();
-      LOGs(glob_var2);
-    } else if (variable_id == 3) {
-      *glob_var3 = (uint64_t)variables[variable_id].data_ptr<float>();
-      LOGs(glob_var3);
-    }
+    tensors[variable_id] = input.clone();
+    cudaIpcGetMemHandle((cudaIpcMemHandle_t *)&variables[variable_id].memHandle,
+                        tensors[variable_id].data_ptr<float>());
+
+    variables[variable_id].dim[0] = 32;
+    variables[variable_id].dim[1] = 3;
+    variables[variable_id].dim[2] = 224;
+    variables[variable_id].dim[3] = 224;
+
     string cmd = to_string(variable_id) + " -1";
     redisCommand(c, "RPUSH done %s", cmd.c_str());
     LOGs("Creator", ", Created");
@@ -84,15 +89,19 @@ void creator(char *redis) {
 }
 
 void worker(int worker_id, char *redis) {
-  // if (worker_id == 1) {
-  //   setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "10%", 1);
-  // } else {
-  //   setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "90%", 1);
-  // }
+  if (worker_id == 1) {
+    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "10%", 1);
+  } else {
+    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "90%", 1);
+  }
+
   if (torch::cuda::is_available()) {
     LOGs("Using CUDA\n");
     device = torch::Device(torch::kCUDA, 0);
   }
+
+  int variable = -1;
+  torch::Tensor tensor;
 
   vector<Model> models;
   int n = get_models_from_json(models, "schema.json");
@@ -103,6 +112,7 @@ void worker(int worker_id, char *redis) {
   redisContext *c = redisConnect(redis, 6379);
 
   warmup(models);
+
   redisCommand(c, "RPUSH initdone %s", to_string(worker_id).c_str());
 
   LOGs("Worker inited", worker_id);
@@ -126,32 +136,23 @@ void worker(int worker_id, char *redis) {
       iss >> task_id >> model_id >> layer_id >> variable_id;
 
       LOGs("Start:", models[model_id].name, layer_id);
-      if (layer_id == 0) {
-        if (variable_id == 0) {
-          LOGs(glob_var0);
-          variables[variable_id] =
-              torch::from_blob(glob_var0, {32, 3, 224, 224},
-                               torch::TensorOptions().device(torch::kCUDA, 0));
-        } else if (variable_id == 1) {
-          LOGs(glob_var1);
-          variables[variable_id] =
-              torch::from_blob(glob_var1, {32, 3, 224, 224},
-                               torch::TensorOptions().device(torch::kCUDA, 0));
-        } else if (variable_id == 2) {
-          LOGs(glob_var2);
-          variables[variable_id] =
-              torch::from_blob(glob_var2, {32, 3, 224, 224},
-                               torch::TensorOptions().device(torch::kCUDA, 0));
-        } else if (variable_id == 3) {
-          LOGs(glob_var3);
-          variables[variable_id] =
-              torch::from_blob(glob_var3, {32, 3, 224, 224},
-                               torch::TensorOptions().device(torch::kCUDA, 0));
-        }
+
+      if (variable != variable_id) {
+        variable = variable_id;
+        float *ptr;
+        cudaIpcOpenMemHandle(
+            (void **)&ptr,
+            *(cudaIpcMemHandle_t *)&variables[variable].memHandle,
+            cudaIpcMemLazyEnablePeerAccess);
+        tensor = torch::from_blob(ptr, {32, 3, 224, 224},
+                                  torch::TensorOptions().device(torch::kCUDA));
+        LOGs("Blobed:", models[model_id].name, layer_id);
       }
-      LOGs("Blobed:", models[model_id].name, layer_id);
-      variables[variable_id] =
-          models[model_id].forward_layer(layer_id, variables[variable_id]);
+
+      tensor = models[model_id].forward_layer(layer_id, tensor);
+      if (layer_id + 1 == models[model_id].size()) {
+        variable = -1;
+      }
 
       std::string cmd = to_string(task_id) + " " + to_string(worker_id);
       reply = (redisReply *)redisCommand(c, "RPUSH done %s", cmd.c_str());
@@ -161,30 +162,22 @@ void worker(int worker_id, char *redis) {
   }
 }
 
-int main() {
+int old() {
   LOGs("Process start");
 
   // setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "10", 1);
-  glob_var0 = (uint64_t *)mmap(NULL, sizeof *glob_var0, PROT_READ | PROT_WRITE,
-                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-  glob_var1 = (uint64_t *)mmap(NULL, sizeof *glob_var1, PROT_READ | PROT_WRITE,
-                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-  glob_var2 = (uint64_t *)mmap(NULL, sizeof *glob_var2, PROT_READ | PROT_WRITE,
-                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-  glob_var3 = (uint64_t *)mmap(NULL, sizeof *glob_var3, PROT_READ | PROT_WRITE,
-                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
-  // torch::Tensor tensor = torch::rand({16, 3, 244, 244}).to(torch::kCUDA);
-  // auto p = tensor.data_ptr<float>();
-  // cout << p << "\n";
-  // auto options = torch::TensorOptions().device(torch::kCUDA);
-  // auto ten2 = torch::from_blob(p, {16, 3, 244, 244}, options);
+  float *a = nullptr;
+  variables = (variable_t *)mmap(NULL, sizeof(*variables) * N_of_variables,
+                                 PROT_READ | PROT_WRITE,
+                                 MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+
+  memset((void *)variables, 0, sizeof(*variables) * N_of_variables);
 
   int worker_id = fork();
   if (worker_id) {
     worker(0, getenv("REDIS"));
   } else {
-
     worker_id = fork();
     if (worker_id) {
       worker(1, getenv("REDIS"));
@@ -193,11 +186,7 @@ int main() {
     }
   }
 
-  // std::thread t1(worker, 0, getenv("REDIS"));
-  // std::thread t2(worker, 1, getenv("REDIS"));
-  // std::thread c1(creator, getenv("REDIS"));
-
-  // t1.join();
-  // t2.join();
   return 0;
 }
+
+int main() { old(); }
