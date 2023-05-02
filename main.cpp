@@ -34,7 +34,23 @@ const int MEM_SENT = 1;
 const int MEM_RECV = 2;
 
 std::atomic_long st, ed;
-torch::Device device(torch::kCPU);
+
+torch::Device get_device() {
+  if (torch::cuda::is_available()) {
+    return torch::Device(torch::kCUDA);
+  } else {
+    return torch::Device(torch::kCPU);
+  }
+}
+
+vector<long> get_shape_from_dim(int dim[4]) {
+  vector<long> result;
+  for (int i = 0; i < 4; i++) {
+    if (dim[i])
+      result.push_back(dim[i]);
+  }
+  return result;
+}
 
 struct variable_t {
   cudaIpcMemHandle_t memHandle;
@@ -44,6 +60,7 @@ struct variable_t {
 variable_t *variables;
 
 void warmup(vector<Model> &models) {
+  torch::Device device = get_device();
   for (int i = 0; i < 8; i++) {
     torch::Tensor tensor = torch::rand({16, 3, 224, 224}).to(device);
     models[i % 2].forward(tensor);
@@ -52,10 +69,7 @@ void warmup(vector<Model> &models) {
 
 void creator(char *redis) {
   vector<torch::Tensor> tensors(N_of_variables);
-  if (torch::cuda::is_available()) {
-    LOGs("Using CUDA\n");
-    device = torch::Device(torch::kCUDA);
-  }
+  torch::Device device = get_device();
 
   redisContext *c = redisConnect(redis, 6379);
   torch::Tensor input = torch::rand({32, 3, 224, 224}).to(device);
@@ -95,13 +109,9 @@ void worker(int worker_id, char *redis) {
     setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "90%", 1);
   }
 
-  if (torch::cuda::is_available()) {
-    LOGs("Using CUDA\n");
-    device = torch::Device(torch::kCUDA, 0);
-  }
-
   int variable = -1;
   torch::Tensor tensor;
+  torch::Device device = get_device();
 
   vector<Model> models;
   int n = get_models_from_json(models, "schema.json");
@@ -135,7 +145,7 @@ void worker(int worker_id, char *redis) {
       int task_id, model_id, layer_id, variable_id;
       iss >> task_id >> model_id >> layer_id >> variable_id;
 
-      LOGs("Start:", models[model_id].name, layer_id);
+      LOGs("Start:", models[model_id].name, layer_id, variable, variable_id);
 
       if (variable != variable_id) {
         variable = variable_id;
@@ -144,12 +154,16 @@ void worker(int worker_id, char *redis) {
             (void **)&ptr,
             *(cudaIpcMemHandle_t *)&variables[variable].memHandle,
             cudaIpcMemLazyEnablePeerAccess);
-        tensor = torch::from_blob(ptr, {32, 3, 224, 224},
-                                  torch::TensorOptions().device(torch::kCUDA));
+        tensor =
+            torch::from_blob(ptr, get_shape_from_dim(variables[variable].dim),
+                             torch::TensorOptions().device(device));
         LOGs("Blobed:", models[model_id].name, layer_id);
       }
 
+      LOGs(torch::_shape_as_tensor(tensor));
       tensor = models[model_id].forward_layer(layer_id, tensor);
+      LOGs(torch::_shape_as_tensor(tensor));
+
       if (layer_id + 1 == models[model_id].size()) {
         variable = -1;
       }
@@ -162,10 +176,8 @@ void worker(int worker_id, char *redis) {
   }
 }
 
-int old() {
+int main() {
   LOGs("Process start");
-
-  // setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "10", 1);
 
   float *a = nullptr;
   variables = (variable_t *)mmap(NULL, sizeof(*variables) * N_of_variables,
@@ -188,5 +200,3 @@ int old() {
 
   return 0;
 }
-
-int main() { old(); }
