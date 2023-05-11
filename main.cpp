@@ -55,6 +55,9 @@ vector<long> get_shape_from_dim(int dim[4]) {
 struct variable_t {
   cudaIpcMemHandle_t memHandle;
   int dim[4];
+  int pos;
+  int version;
+  bool moved;
 };
 
 variable_t *variables;
@@ -73,6 +76,9 @@ void creator(char *redis) {
 
   redisContext *c = redisConnect(redis, 6379);
   torch::Tensor input = torch::rand({32, 3, 224, 224}).to(device);
+  for (int i = 0; i < N_of_variables; i++) {
+    variables[i].version = 0;
+  }
 
   while (true) {
     std::string result;
@@ -95,6 +101,9 @@ void creator(char *redis) {
     variables[variable_id].dim[1] = 3;
     variables[variable_id].dim[2] = 224;
     variables[variable_id].dim[3] = 224;
+    variables[variable_id].pos = -1;
+    variables[variable_id].moved = true;
+    variables[variable_id].version++;
 
     string cmd = to_string(variable_id) + " -1";
     redisCommand(c, "RPUSH done %s", cmd.c_str());
@@ -110,10 +119,10 @@ void worker(int worker_id, char *redis) {
   }
 
   int variable = -1;
-  torch::Tensor tensor;
   torch::Device device = get_device();
 
   vector<Model> models;
+
   int n = get_models_from_json(models, "schema.json");
   for (auto &model : models) {
     model.to(device);
@@ -126,6 +135,8 @@ void worker(int worker_id, char *redis) {
   redisCommand(c, "RPUSH initdone %s", to_string(worker_id).c_str());
 
   LOGs("Worker inited", worker_id);
+  vector<torch::Tensor> local_variables(N_of_variables);
+  vector<int> variable_versions(N_of_variables, -1);
 
   while (true) {
     std::string result;
@@ -141,28 +152,84 @@ void worker(int worker_id, char *redis) {
     string cmd;
     iss >> cmd;
 
+    vector<float *> ptrs(10, nullptr);
+
+    float *ptr;
+    // for (int i = 0; i < N_of_variables; i++) {
+    //   if (variables[i].version != variable_versions[i])
+    //     local_variables[i] = torch::Tensor();
+    // }
     if (cmd == "forward") {
       int task_id, model_id, layer_id, variable_id;
       iss >> task_id >> model_id >> layer_id >> variable_id;
 
       LOGs("Start:", models[model_id].name, layer_id, variable, variable_id);
+      LOGs("Variable:", variables[variable_id].pos,
+           variables[variable_id].moved);
 
-      if (variable != variable_id) {
+      if (variable_versions[variable_id] != variables[variable_id].version ||
+          (variables[variable_id].pos != worker_id &&
+           variables[variable_id].moved) ||
+          variable != variable_id) {
         variable = variable_id;
-        float *ptr;
-        cudaIpcOpenMemHandle(
-            (void **)&ptr,
-            *(cudaIpcMemHandle_t *)&variables[variable].memHandle,
-            cudaIpcMemLazyEnablePeerAccess);
-        tensor =
-            torch::from_blob(ptr, get_shape_from_dim(variables[variable].dim),
-                             torch::TensorOptions().device(device));
-        LOGs("Blobed:", models[model_id].name, layer_id);
+        if (variables[variable].pos != worker_id &&
+            (variable_versions[variable_id] != variables[variable_id].version ||
+             variables[variable].moved)) {
+          LOGs("path0");
+          float *ptr;
+          int blob = cudaIpcOpenMemHandle(
+              (void **)&(ptr),
+              *(cudaIpcMemHandle_t *)&variables[variable].memHandle,
+              cudaIpcMemLazyEnablePeerAccess);
+          local_variables[variable] =
+              torch::from_blob(ptr, get_shape_from_dim(variables[variable].dim),
+                               torch::TensorOptions().device(device));
+          // LOGs("Blobed0:", blob, models[model_id].name, "Layer: ", layer_id);
+          // cudaIpcCloseMemHandle(ptr);
+        } else {
+          // LOGs("path1");
+          // local_variables[variable] = torch::from_blob(
+          //     ptrs[variable], get_shape_from_dim(variables[variable].dim),
+          //     torch::TensorOptions().device(device));
+          // LOGs("Blobed1:", models[model_id].name, "Layer ", layer_id);
+        }
+      }
+      variable = variable_id;
+      variable_versions[variable_id] = variables[variable_id].version;
+      if (variables[variable].dim[2] == 0) {
+        local_variables[variable] = at::reshape(
+            local_variables[variable],
+            {variables[variable].dim[0], variables[variable].dim[1]});
       }
 
-      LOGs(torch::_shape_as_tensor(tensor));
-      tensor = models[model_id].forward_layer(layer_id, tensor);
-      LOGs(torch::_shape_as_tensor(tensor));
+      variables[variable].pos = worker_id;
+
+      // LOGs(local_variables[variable].data_ptr<float>());
+      // LOGs(torch::_shape_as_tensor(local_variables[variable]));
+      ptrs[variable] = local_variables[variable].data_ptr<float>();
+      local_variables[variable] =
+          models[model_id].forward_layer(layer_id, local_variables[variable]);
+      // LOGs(local_variables[variable].data_ptr<float>());
+      // LOGs(torch::_shape_as_tensor(local_variables[variable]));
+      // LOGs("fowwared", worker_id);
+
+      if (ptrs[variable] != local_variables[variable].data_ptr<float>()) {
+        variables[variable].moved = true;
+        // LOGs(cudaIpcGetMemHandle(
+        //     (cudaIpcMemHandle_t *)&variables[variable_id].memHandle,
+        //     local_variables[variable].data_ptr<float>()));
+      } else {
+
+        variables[variable].moved = false;
+      }
+      for (int i = 0; i < 4; i++) {
+        variables[variable].dim[i] = 0;
+      }
+
+      torch::Tensor shape = torch::_shape_as_tensor(local_variables[variable]);
+      for (int i = 0; i < shape.sizes()[0]; i++) {
+        variables[variable].dim[i] = shape[i].item<int>();
+      }
 
       if (layer_id + 1 == models[model_id].size()) {
         variable = -1;
