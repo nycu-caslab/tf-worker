@@ -56,8 +56,6 @@ struct variable_t {
   cudaIpcMemHandle_t memHandle;
   int dim[4];
   int pos;
-  int version;
-  bool moved;
 };
 
 variable_t *variables;
@@ -67,6 +65,7 @@ void warmup(vector<Model> &models) {
   for (int i = 0; i < 8; i++) {
     torch::Tensor tensor = torch::rand({16, 3, 224, 224}).to(device);
     models[i % 2].forward(tensor);
+    torch::cuda::synchronize();
   }
 }
 
@@ -76,9 +75,6 @@ void creator(char *redis) {
 
   redisContext *c = redisConnect(redis, 6379);
   torch::Tensor input = torch::rand({32, 3, 224, 224}).to(device);
-  for (int i = 0; i < N_of_variables; i++) {
-    variables[i].version = 0;
-  }
 
   while (true) {
     std::string result;
@@ -102,8 +98,6 @@ void creator(char *redis) {
     variables[variable_id].dim[2] = 224;
     variables[variable_id].dim[3] = 224;
     variables[variable_id].pos = -1;
-    variables[variable_id].moved = true;
-    variables[variable_id].version++;
 
     string cmd = to_string(variable_id) + " -1";
     redisCommand(c, "RPUSH done %s", cmd.c_str());
@@ -112,13 +106,12 @@ void creator(char *redis) {
 }
 
 void worker(int worker_id, char *redis) {
-  if (worker_id == 1) {
-    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "10%", 1);
+  if (worker_id == 0) {
+    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", getenv("WORKER0"), 1);
   } else {
-    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", "90%", 1);
+    setenv("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE", getenv("WORKER1"), 1);
   }
 
-  int variable = -1;
   torch::Device device = get_device();
 
   vector<Model> models;
@@ -133,10 +126,9 @@ void worker(int worker_id, char *redis) {
   warmup(models);
 
   redisCommand(c, "RPUSH initdone %s", to_string(worker_id).c_str());
+  torch::Tensor tensor;
 
   LOGs("Worker inited", worker_id);
-  vector<torch::Tensor> local_variables(N_of_variables);
-  vector<int> variable_versions(N_of_variables, -1);
 
   while (true) {
     std::string result;
@@ -144,7 +136,7 @@ void worker(int worker_id, char *redis) {
     reply = (redisReply *)redisCommand(c, "BLPOP worker%d 0", worker_id);
 
     result = reply->element[1]->str;
-    LOGs("Worker", worker_id, ", Input: ", result);
+    // LOGs("Worker", worker_id, ", Input: ", result);
 
     std::istringstream iss(result);
     freeReplyObject(reply);
@@ -152,93 +144,65 @@ void worker(int worker_id, char *redis) {
     string cmd;
     iss >> cmd;
 
-    vector<float *> ptrs(10, nullptr);
-
     float *ptr;
-    // for (int i = 0; i < N_of_variables; i++) {
-    //   if (variables[i].version != variable_versions[i])
-    //     local_variables[i] = torch::Tensor();
-    // }
+
     if (cmd == "forward") {
       int task_id, model_id, layer_id, variable_id;
       iss >> task_id >> model_id >> layer_id >> variable_id;
 
-      LOGs("Start:", models[model_id].name, layer_id, variable, variable_id);
-      LOGs("Variable:", variables[variable_id].pos,
-           variables[variable_id].moved);
+      // LOGs("Start:", models[model_id].name, layer_id, variable_id);
+      // LOGs("Variable:", variables[variable_id].pos);
 
-      if (variable_versions[variable_id] != variables[variable_id].version ||
-          (variables[variable_id].pos != worker_id &&
-           variables[variable_id].moved) ||
-          variable != variable_id) {
-        variable = variable_id;
-        if (variables[variable].pos != worker_id &&
-            (variable_versions[variable_id] != variables[variable_id].version ||
-             variables[variable].moved)) {
-          LOGs("path0");
-          float *ptr;
-          int blob = cudaIpcOpenMemHandle(
-              (void **)&(ptr),
-              *(cudaIpcMemHandle_t *)&variables[variable].memHandle,
-              cudaIpcMemLazyEnablePeerAccess);
-          local_variables[variable] =
-              torch::from_blob(ptr, get_shape_from_dim(variables[variable].dim),
-                               torch::TensorOptions().device(device));
-          // LOGs("Blobed0:", blob, models[model_id].name, "Layer: ", layer_id);
-          // cudaIpcCloseMemHandle(ptr);
-        } else {
-          // LOGs("path1");
-          // local_variables[variable] = torch::from_blob(
-          //     ptrs[variable], get_shape_from_dim(variables[variable].dim),
-          //     torch::TensorOptions().device(device));
-          // LOGs("Blobed1:", models[model_id].name, "Layer ", layer_id);
+      if (variables[variable_id].pos % 10 != worker_id) {
+        if (variables[variable_id].pos >= 10) {
+          // LOGs("Over");
         }
-      }
-      variable = variable_id;
-      variable_versions[variable_id] = variables[variable_id].version;
-      if (variables[variable].dim[2] == 0) {
-        local_variables[variable] = at::reshape(
-            local_variables[variable],
-            {variables[variable].dim[0], variables[variable].dim[1]});
+        if (variables[variable_id].pos != -1) {
+          variables[variable_id].pos = 10;
+        } else {
+          variables[variable_id].pos = 0;
+        }
+        variables[variable_id].pos += worker_id;
+
+        int blob = cudaIpcOpenMemHandle(
+            (void **)&(ptr),
+            *(cudaIpcMemHandle_t *)&variables[variable_id].memHandle,
+            cudaIpcMemLazyEnablePeerAccess);
+        tensor = torch::from_blob(
+            ptr, get_shape_from_dim(variables[variable_id].dim),
+            torch::TensorOptions().device(device));
+        // LOGs("Blobed");
       }
 
-      variables[variable].pos = worker_id;
-
-      // LOGs(local_variables[variable].data_ptr<float>());
       // LOGs(torch::_shape_as_tensor(local_variables[variable]));
-      ptrs[variable] = local_variables[variable].data_ptr<float>();
-      local_variables[variable] =
-          models[model_id].forward_layer(layer_id, local_variables[variable]);
+      // LOGs(local_variables[variable].data_ptr<float>());
+      ptr = tensor.data_ptr<float>();
+      tensor = models[model_id].forward_layer(layer_id, tensor);
+      torch::cuda::synchronize();
       // LOGs(local_variables[variable].data_ptr<float>());
       // LOGs(torch::_shape_as_tensor(local_variables[variable]));
       // LOGs("fowwared", worker_id);
 
-      if (ptrs[variable] != local_variables[variable].data_ptr<float>()) {
-        variables[variable].moved = true;
-        // LOGs(cudaIpcGetMemHandle(
-        //     (cudaIpcMemHandle_t *)&variables[variable_id].memHandle,
-        //     local_variables[variable].data_ptr<float>()));
-      } else {
-
-        variables[variable].moved = false;
-      }
-      for (int i = 0; i < 4; i++) {
-        variables[variable].dim[i] = 0;
+      if (ptr != tensor.data_ptr<float>()) {
+        LOGs(cudaIpcGetMemHandle(
+            (cudaIpcMemHandle_t *)&variables[variable_id].memHandle,
+            tensor.data_ptr<float>()));
       }
 
-      torch::Tensor shape = torch::_shape_as_tensor(local_variables[variable]);
-      for (int i = 0; i < shape.sizes()[0]; i++) {
-        variables[variable].dim[i] = shape[i].item<int>();
+      torch::Tensor shape = torch::_shape_as_tensor(tensor);
+
+      for (int i = 0; i < tensor.dim(); i++) {
+        variables[variable_id].dim[i] = tensor.sizes()[i];
       }
 
-      if (layer_id + 1 == models[model_id].size()) {
-        variable = -1;
+      for (int i = tensor.dim(); i < 4; i++) {
+        variables[variable_id].dim[i] = 0;
       }
 
       std::string cmd = to_string(task_id) + " " + to_string(worker_id);
       reply = (redisReply *)redisCommand(c, "RPUSH done %s", cmd.c_str());
 
-      LOGs("Forwarded:", models[model_id].name, layer_id);
+      // LOGs("Forwarded:", models[model_id].name, layer_id);
     }
   }
 }
