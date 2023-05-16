@@ -62,9 +62,15 @@ variable_t *variables;
 
 void warmup(vector<Model> &models) {
   torch::Device device = get_device();
+  torch::Tensor tensor;
   for (int i = 0; i < 8; i++) {
-    torch::Tensor tensor = torch::rand({16, 3, 224, 224}).to(device);
-    models[i % 2].forward(tensor);
+    if (models[i % models.size()].name == "lstm") {
+      tensor = torch::rand({16, 3, 50176}).to(device);
+      models[i % models.size()].forward_layer(0, tensor);
+    } else {
+      tensor = torch::rand({16, 3, 224, 224}).to(device);
+      models[i % models.size()].forward(tensor);
+    }
     torch::cuda::synchronize();
   }
 }
@@ -117,6 +123,14 @@ void worker(int worker_id, char *redis) {
   vector<Model> models;
 
   int n = get_models_from_json(models, "schema.json");
+  if (string(getenv("CASE")) == "0") {
+    models = {models[0], models[1]};
+  } else if (string(getenv("CASE")) == "1") {
+    models = {models[0], models[2]};
+  } else if (string(getenv("CASE")) == "2") {
+    models = {models[1], models[2]};
+  }
+
   for (auto &model : models) {
     model.to(device);
   }
@@ -152,6 +166,12 @@ void worker(int worker_id, char *redis) {
 
       // LOGs("Start:", models[model_id].name, layer_id, variable_id);
       // LOGs("Variable:", variables[variable_id].pos);
+
+      if (layer_id == 0 && models[model_id].name == "lstm") {
+        variables[variable_id].dim[1] = 3;
+        variables[variable_id].dim[2] = 50176;
+        variables[variable_id].dim[3] = 0;
+      }
 
       if (variables[variable_id].pos % 10 != worker_id) {
         if (variables[variable_id].pos >= 10) {

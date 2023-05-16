@@ -10,7 +10,7 @@
 using json = nlohmann::json;
 using namespace std;
 
-enum class op { conv, relu, maxpool, linear, flat, avgpool };
+enum class op { conv, relu, maxpool, linear, flat, avgpool, lstm };
 
 class Layer {
 public:
@@ -26,7 +26,8 @@ public:
   size_t size() { return layers->size(); }
 
   torch::Tensor forward_layer(int layer_id, torch::Tensor &tensor) {
-    assert(layer_data.size() > layer_id && layers->size() > layer_id);
+    assert(layer_data.size() > layer_id);
+    assert(layers->size() > layer_id);
     switch (layer_data[layer_id].type) {
     case op::conv:
       return layers->at<torch::nn::Conv2dImpl>(layer_id).forward(tensor);
@@ -41,6 +42,8 @@ public:
     case op::avgpool:
       return layers->at<torch::nn::AdaptiveAvgPool2dImpl>(layer_id).forward(
           tensor);
+    case op::lstm:
+      return get<0>(layers->at<torch::nn::LSTMImpl>(layer_id).forward(tensor));
     }
     return tensor;
   }
@@ -92,6 +95,14 @@ public:
         torch::nn::AdaptiveAvgPool2dOptions({size, size})));
     this->layer_data.push_back(Layer(op::avgpool));
   }
+  void add_lstm_layer(int input_size, int hidden_size) {
+    this->layers->push_back(
+        torch::nn::LSTM(torch::nn::LSTMOptions(input_size, hidden_size)
+                            .num_layers(3)
+                            .batch_first(false)
+                            .bidirectional(true)));
+    this->layer_data.push_back(Layer(op::lstm));
+  }
 
 private:
   torch::nn::Sequential layers;
@@ -121,6 +132,9 @@ int get_models_from_json(vector<Model> &models, string filename) {
         models[i].add_flat_layer();
       } else if (layer["type"] == "avgpool") {
         models[i].add_avgpool_layer(layer["params"]["size"]);
+      } else if (layer["type"] == "lstm") {
+        models[i].add_lstm_layer(layer["params"]["input_size"],
+                                 layer["params"]["hidden_size"]);
       }
     }
   }
