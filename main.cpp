@@ -32,6 +32,8 @@ using namespace chrono;
 const int MEM_INIT = 0;
 const int MEM_SENT = 1;
 const int MEM_RECV = 2;
+long scheduler_all = 0, scheduler_n = 0;
+bool overhead = true;
 
 std::atomic_long st, ed;
 
@@ -64,13 +66,24 @@ void warmup(vector<Model> &models) {
   torch::Device device = get_device();
   torch::Tensor tensor;
   for (int i = 0; i < 8; i++) {
-    if (models[i % models.size()].name == "lstm") {
-      tensor = torch::rand({16, 3, 50176}).to(device);
-      models[i % models.size()].forward_layer(0, tensor);
-    } else {
-      tensor = torch::rand({16, 3, 224, 224}).to(device);
-      models[i % models.size()].forward(tensor);
+    Model &model = models[i % models.size()];
+    tensor = torch::rand(model.input_shape).to(device);
+    long long move_time = 0;
+    for (int j = 0; j < model.size(); j++) {
+      torch::cuda::synchronize();
+      long long move_start = chrono::duration_cast<chrono::microseconds>(
+                                 chrono::steady_clock::now().time_since_epoch())
+                                 .count();
+      tensor.to(torch::kCPU);
+      tensor.to(device);
+      torch::cuda::synchronize();
+      long long move_end = chrono::duration_cast<chrono::microseconds>(
+                               chrono::steady_clock::now().time_since_epoch())
+                               .count();
+      move_time += move_end - move_start;
+      tensor = model.forward_layer(j, tensor);
     }
+    LOGs(i % models.size(), move_time, model.size());
     torch::cuda::synchronize();
   }
 }
@@ -79,8 +92,15 @@ void creator(char *redis) {
   vector<torch::Tensor> tensors(N_of_variables);
   torch::Device device = get_device();
 
+  vector<Model> models;
+
+  int n = get_models_from_json(models, "schema.json");
+
   redisContext *c = redisConnect(redis, 6379);
-  torch::Tensor input = torch::rand({32, 3, 224, 224}).to(device);
+
+  vector<torch::Tensor> inputs = {
+      torch::rand(models[0].input_shape).to(device),
+      torch::rand(models[1].input_shape).to(device)};
 
   while (true) {
     std::string result;
@@ -88,26 +108,30 @@ void creator(char *redis) {
     reply = (redisReply *)redisCommand(c, "BLPOP creator 0");
 
     result = reply->element[1]->str;
-    LOGs("Creator", ", Input: ", result);
+    // LOGs("Creator", ", Input: ", result);
 
     std::istringstream iss(result);
     freeReplyObject(reply);
 
     int variable_id;
     iss >> variable_id;
-    tensors[variable_id] = input.clone();
+    int model_id = (variable_id + N_of_variables / 2) / N_of_variables;
+    tensors[variable_id] = inputs[model_id].clone();
     cudaIpcGetMemHandle((cudaIpcMemHandle_t *)&variables[variable_id].memHandle,
                         tensors[variable_id].data_ptr<float>());
 
-    variables[variable_id].dim[0] = 32;
-    variables[variable_id].dim[1] = 3;
-    variables[variable_id].dim[2] = 224;
-    variables[variable_id].dim[3] = 224;
+    for (int i = 0; i < 4; i++) {
+      variables[variable_id].dim[i] = 0;
+    }
+
+    for (int i = 0; i < models[model_id].input_shape.size(); i++) {
+      variables[variable_id].dim[i] = models[model_id].input_shape[i];
+    }
     variables[variable_id].pos = -1;
 
     string cmd = to_string(variable_id) + " -1";
     redisCommand(c, "RPUSH done %s", cmd.c_str());
-    LOGs("Creator", ", Created");
+    // LOGs("Creator", ", Created");
   }
 }
 
@@ -123,13 +147,6 @@ void worker(int worker_id, char *redis) {
   vector<Model> models;
 
   int n = get_models_from_json(models, "schema.json");
-  if (string(getenv("CASE")) == "0") {
-    models = {models[0], models[1]};
-  } else if (string(getenv("CASE")) == "1") {
-    models = {models[0], models[2]};
-  } else if (string(getenv("CASE")) == "2") {
-    models = {models[1], models[2]};
-  }
 
   for (auto &model : models) {
     model.to(device);
@@ -167,18 +184,19 @@ void worker(int worker_id, char *redis) {
       // LOGs("Start:", models[model_id].name, layer_id, variable_id);
       // LOGs("Variable:", variables[variable_id].pos);
 
-      if (layer_id == 0 && models[model_id].name == "lstm") {
-        variables[variable_id].dim[1] = 3;
-        variables[variable_id].dim[2] = 50176;
-        variables[variable_id].dim[3] = 0;
-      }
-
       if (variables[variable_id].pos % 10 != worker_id) {
+        long scheduler_start;
         if (variables[variable_id].pos >= 10) {
           // LOGs("Over");
         }
         if (variables[variable_id].pos != -1) {
           variables[variable_id].pos = 10;
+          if (overhead) {
+            scheduler_start =
+                chrono::duration_cast<chrono::microseconds>(
+                    chrono::steady_clock::now().time_since_epoch())
+                    .count();
+          }
         } else {
           variables[variable_id].pos = 0;
         }
@@ -192,21 +210,33 @@ void worker(int worker_id, char *redis) {
             ptr, get_shape_from_dim(variables[variable_id].dim),
             torch::TensorOptions().device(device));
         // LOGs("Blobed");
+        if (overhead && variables[variable_id].pos >= 10) {
+          long scheduler_end =
+              chrono::duration_cast<chrono::microseconds>(
+                  chrono::steady_clock::now().time_since_epoch())
+                  .count();
+          scheduler_all += scheduler_end - scheduler_start;
+          scheduler_n++;
+          if (scheduler_n == 20) {
+            LOGs("Overhead", scheduler_all);
+          }
+        }
       }
 
       // LOGs(torch::_shape_as_tensor(local_variables[variable]));
       // LOGs(local_variables[variable].data_ptr<float>());
+      // LOGs(torch::_shape_as_tensor(tensor));
       ptr = tensor.data_ptr<float>();
       tensor = models[model_id].forward_layer(layer_id, tensor);
       torch::cuda::synchronize();
       // LOGs(local_variables[variable].data_ptr<float>());
-      // LOGs(torch::_shape_as_tensor(local_variables[variable]));
+      // LOGs(torch::_shape_as_tensor(tensor));
       // LOGs("fowwared", worker_id);
 
       if (ptr != tensor.data_ptr<float>()) {
-        LOGs(cudaIpcGetMemHandle(
+        cudaIpcGetMemHandle(
             (cudaIpcMemHandle_t *)&variables[variable_id].memHandle,
-            tensor.data_ptr<float>()));
+            tensor.data_ptr<float>());
       }
 
       torch::Tensor shape = torch::_shape_as_tensor(tensor);
@@ -248,6 +278,5 @@ int main() {
       creator(getenv("REDIS"));
     }
   }
-
   return 0;
 }

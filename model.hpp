@@ -10,7 +10,7 @@
 using json = nlohmann::json;
 using namespace std;
 
-enum class op { conv, relu, maxpool, linear, flat, avgpool, lstm };
+enum class op { conv, relu, maxpool, linear, flat, avgpool, lstm, tf };
 
 class Layer {
 public:
@@ -23,6 +23,7 @@ public:
   int id;
   string name;
   Model(int id, string name) : id(id), name(name){};
+  vector<long> input_shape;
   size_t size() { return layers->size(); }
 
   torch::Tensor forward_layer(int layer_id, torch::Tensor &tensor) {
@@ -44,6 +45,10 @@ public:
           tensor);
     case op::lstm:
       return get<0>(layers->at<torch::nn::LSTMImpl>(layer_id).forward(tensor));
+    case op::tf:
+      torch::Tensor tgt = tensor.clone();
+      return layers->at<torch::nn::TransformerImpl>(layer_id).forward(tensor,
+                                                                      tgt);
     }
     return tensor;
   }
@@ -103,6 +108,11 @@ public:
                             .bidirectional(true)));
     this->layer_data.push_back(Layer(op::lstm));
   }
+  void add_tf_layer(int d_model, int nhead) {
+    this->layers->push_back(
+        torch::nn::Transformer(torch::nn::TransformerOptions(d_model, nhead)));
+    this->layer_data.push_back(Layer(op::tf));
+  }
 
 private:
   torch::nn::Sequential layers;
@@ -114,6 +124,9 @@ int get_models_from_json(vector<Model> &models, string filename) {
   json data = json::parse(f);
   for (int i = 0; i < data["Models"].size(); i++) {
     models.push_back(Model(i, data["Models"][i]["name"]));
+    for (auto &num : data["Models"][i]["input_shape"]) {
+      models[i].input_shape.push_back(num);
+    }
     for (auto &layer : data["Models"][i]["layers"]) {
       if (layer["type"] == "conv") {
         models[i].add_conv_layer(
@@ -135,6 +148,9 @@ int get_models_from_json(vector<Model> &models, string filename) {
       } else if (layer["type"] == "lstm") {
         models[i].add_lstm_layer(layer["params"]["input_size"],
                                  layer["params"]["hidden_size"]);
+      } else if (layer["type"] == "tf") {
+        models[i].add_tf_layer(layer["params"]["d_model"],
+                               layer["params"]["nhead"]);
       }
     }
   }
